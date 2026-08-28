@@ -1,0 +1,5 @@
+# DSH 安装本插件时应用的 cordis 配置补丁。
+# id 必须在 profile 内唯一——重复的 loader entry id 会让 dsh 启动崩溃。
+- insert:
+    - id: battery-health-check
+      name: dsh-plugin-battery-health
