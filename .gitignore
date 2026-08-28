@@ -1,0 +1,16 @@
+# 检测产物（含设备序列号等标识信息，不入库）
+out/
+battery-health-[0-9]*/
+*.svg.bak
+history.tsv
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
