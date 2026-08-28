@@ -192,16 +192,47 @@ DSH 文档明确：含冒号、括号、逗号的值不加引号会导致 YAML �
 
 按「先跑通、后扩散」排序，理由是每一步都能独立验证，失败了不会牵连下一步。
 
-| 阶段 | 动作 | 目标站点 | 前置条件 |
+| 阶段 | 动作 | 目标站点 | 状态 |
 |---|---|---|---|
-| A | skill 放 `.dsh/skills/` | — | 无 |
-| B | 做成 bundle 插件 | — | 无 |
-| C-1 | 打 `dsh-plugin` topic | ③ + 一批自动聚合站 | B（严格说不需要，但先有 B 更体面） |
-| C-2 | PR 到 1024Store 目录仓 | ① | B |
-| C-3 | PR 到 awesome-dsh-plugin | ② | B + ≥10 提交 + ≥1 天 |
+| A | skill 放 `.dsh/skills/` | — | ✅ 已完成 |
+| B | 做成 bundle 插件 | — | ✅ 已完成，8 测试通过 |
+| C-1 | 打 `dsh-plugin` topic | ③ + 一批自动聚合站 | ✅ 已完成 2026-08-28 |
+| C-2 | PR 到 1024Store 目录仓 | ① | ✅ [PR #263](https://github.com/imsai-sh/awesome-deepseek-harness-plugins/pull/263) 已自动合并 |
+| C-3 | PR 到 awesome-dsh-plugin | ② | ⏳ 等门槛，见下 |
 
 **为什么 C-2 排在 C-3 前面**：C-2 无年龄门槛且自动合并，是最快能拿到「正式收录」
 反馈的渠道，可以先用它验证 `dsh.bundle` 声明是否被 CI 接受。C-3 权重最大但要等提交数。
+
+### C-3 待办：等门槛，不要凑提交
+
+`awesome-dsh-plugin` 要求仓库**创建满 1 天且提交数 ≥ 10**。这是 CI 自动卡的。
+
+**不要为了凑数造提交。** 那个门槛存在的目的正是过滤「临时攒出来的仓库」，
+用空提交绕过它，恰好证明了自己就是它要拦的那类。而且维护者合并前会实际读仓库，
+一串无意义的提交只会让人对整个投稿起疑。
+
+接下来这些都是真实要做的工作，自然就够 10 个了：
+
+| 待办 | 价值 |
+|---|---|
+| Windows 实机验证并修 bug | 能力矩阵里最大的空白 |
+| CI 跑测试 | 站点看重「活跃维护」 |
+| `screenshots.json` + 趋势图样例 | 市场详情页会展示，不声明就由 README 自动抽取 |
+| npm 发布 | 免 `allowBuilds` 构建授权，安装体验更好 |
+| 商品链接核对 | 拯救者电池的商品 ID 待确认 |
+| 埋点 | 试点转化分析 |
+
+条目内容已经写好放在 [`docs/listing/awesome-dsh-plugin.yml`](listing/awesome-dsh-plugin.yml)，
+达标后照着里面的注释走即可。
+
+**门槛自查：**
+
+```bash
+echo "提交数: $(git rev-list --count HEAD) / 10"
+gh repo view 1Ecc/dsh-plugin --json createdAt --jq '"创建于: \(.createdAt)"'
+```
+
+---
 
 ### 一个必须清醒的判断
 
