@@ -1,4 +1,4 @@
-# DSH Plugin — 电池健康度检测 Skill
+# DSH Plugin — 电池健康度检测
 
 一个跨平台（macOS / Windows）的笔记本电池体检 skill，面向联想服务团队的一线咨询场景。
 输入是一句「帮我看看电池」，输出是一份服务顾问能照着讲、终端用户能看懂并且愿意相信的诊断报告。
@@ -15,8 +15,10 @@
 - [关键数据口径](#关键数据口径)
 - [趋势图设计原则](#趋势图设计原则)
 - [推荐策略](#推荐策略软广)
+- [两种形态：Skill 与 Plugin](#两种形态skill-与-plugin)
 - [安装与使用](#安装与使用)
 - [目录结构](#目录结构)
+- [插件公共区收录](#插件公共区收录)
 - [已知待办](#已知待办)
 
 ---
@@ -125,7 +127,7 @@ collect_macos.sh / collect_windows.ps1
 - **取系统口径作为对客户陈述的数字**
 - 差 ≥ 3 个百分点时**必须主动解释**，不解释客户会觉得在糊弄
 
-完整规则见 [`interpretation.md`](.claude/skills/battery-health-check/references/interpretation.md)。
+完整规则见 [`interpretation.md`](.dsh/skills/battery-health-check/references/interpretation.md)。
 
 ### 结论四档
 
@@ -213,7 +215,46 @@ collect_macos.sh / collect_windows.ps1
 
 ---
 
+## 两种形态：Skill 与 Plugin
+
+同一套能力有两种交付形态，**互补而非二选一**：
+
+| | Skill | Plugin |
+|---|---|---|
+| 管什么 | 怎么判读、怎么写报告、什么时候推荐 | 确定性地跑脚本、返回结构化结果 |
+| 形态 | `SKILL.md` + references + scripts | ESM 模块，导出 `apply(ctx)` |
+| 安装 | 放进 skills 目录即被发现 | `dsh plugin add` |
+| 作用域 | 支持项目级 | profile 级 |
+
+Plugin 注册三个 DSH 原生工具：
+
+| 工具 | 作用 |
+|---|---|
+| `battery_health_collect` | 采集并解析出结构化 metrics，生成官方报告与历史快照 |
+| `battery_health_trend` | 渲染容量衰减趋势 SVG |
+| `battery_health_rules` | 取判读规则文档，避免模型凭印象下结论 |
+
+第三个工具的存在是为了让**只装了 Plugin 没装 Skill 的用户也能拿到判读标准**，
+否则模型会拿着一堆数字自由发挥，而判读规则正是这个项目最不该被绕过的部分。
+
+---
+
 ## 安装与使用
+
+### 作为 DSH 插件
+
+```bash
+dsh plugin --profile web add github:1Ecc/dsh-plugin
+```
+
+装完重启 `dsh web` 并刷新页面，三个工具即可用。插件包内自带 skill 资源，
+所以不额外装 skill 也能工作。
+
+### 作为 DSH 项目级 skill
+
+克隆本仓库后，`.dsh/skills/battery-health-check/` 就是 DSH 的项目级 skill
+（优先级 100，扫描 `.dsh/skills/` 且**只扫顶层不递归**）。在该项目目录下启动 dsh 即可，
+或用 `/battery-health-check` 手动触发。
 
 ### 作为 Claude Code skill
 
@@ -231,15 +272,15 @@ ln -s "$(pwd)/.claude/skills/battery-health-check" ~/.claude/skills/battery-heal
 macOS：
 
 ```bash
-bash .claude/skills/battery-health-check/scripts/collect_macos.sh --outdir ./out
-python3 .claude/skills/battery-health-check/scripts/render_trend.py --metrics ./out/metrics.env --out ./out/trend.svg
+bash .dsh/skills/battery-health-check/scripts/collect_macos.sh --outdir ./out
+python3 .dsh/skills/battery-health-check/scripts/render_trend.py --metrics ./out/metrics.env --out ./out/trend.svg
 ```
 
 Windows：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .claude\skills\battery-health-check\scripts\collect_windows.ps1 -OutDir .\out
-python3 .claude\skills\battery-health-check\scripts\render_trend.py --metrics .\out\metrics.env --out .\out\trend.svg
+powershell -NoProfile -ExecutionPolicy Bypass -File .dsh\skills\battery-health-check\scripts\collect_windows.ps1 -OutDir .\out
+python3 .dsh\skills\battery-health-check\scripts\render_trend.py --metrics .\out\metrics.env --out .\out\trend.svg
 ```
 
 ### 反复运行会越来越准
@@ -253,17 +294,45 @@ macOS 上系统不保存历史容量记录，所以首次检测的趋势只能�
 ## 目录结构
 
 ```
-.claude/skills/battery-health-check/
-├── SKILL.md                    流程编排与报告模板
-├── scripts/
-│   ├── collect_macos.sh        macOS 采集（零依赖）
-│   ├── collect_windows.ps1     Windows 采集（powercfg + WMI）
-│   └── render_trend.py         趋势图渲染（仅标准库）
-└── references/
-    ├── interpretation.md       判读规则：分级、速率公式、异常信号、结论四档
-    ├── lenovo-offers.md        推荐策略：纪律、触发条件、试点商品、服务入口
-    └── platform-notes.md       平台数据源、字段口径、已知坑
+├── package.json                dsh.bundle 声明（可被 dsh plugin add 安装的凭证）
+├── cordis.patch.yml            DSH 安装时应用的 cordis 配置补丁
+├── src/
+│   ├── battery.js              纯逻辑：跑脚本、解析 metrics、渲染趋势（无 peer 依赖，可测）
+│   └── index.js                Cordis 插件壳：注册三个工具
+├── test/battery.test.js        单元 + 真实采集的集成测试
+├── docs/marketplace-listing.md 插件公共区收录机制、站点要求、我们的策略
+├── scripts/sync-skill.sh       .dsh/skills → .claude/skills 同步，防两份副本漂移
+│
+├── .dsh/skills/battery-health-check/     ← DSH 加载路径（唯一事实来源）
+│   ├── SKILL.md                流程编排与报告模板
+│   ├── scripts/
+│   │   ├── collect_macos.sh    macOS 采集（零依赖）
+│   │   ├── collect_windows.ps1 Windows 采集（powercfg + WMI）
+│   │   └── render_trend.py     趋势图渲染（仅标准库）
+│   └── references/
+│       ├── interpretation.md   判读规则：分级、速率公式、异常信号、结论四档
+│       ├── lenovo-offers.md    推荐策略：纪律、触发条件、试点商品、服务入口
+│       └── platform-notes.md   平台数据源、字段口径、已知坑
+│
+└── .claude/skills/battery-health-check/  ← Claude Code 加载路径（由 sync-skill.sh 生成）
 ```
+
+两份 skill 副本是因为 DSH 扫 `.dsh/skills/`、Claude Code 扫 `.claude/skills/`，
+互不认对方的路径。软链在 Windows 上不可靠（本插件要跨平台），所以用真实副本 +
+`scripts/sync-skill.sh` 保持一致。改动请改 `.dsh/` 那份再同步。
+
+---
+
+## 插件公共区收录
+
+DSH **没有官方运营的插件市场**。所谓「上架」实际上是给仓库打 `dsh-plugin` topic，
+十几个社区聚合站每天自动扫描收录——**这是一次不可选择目标的广播，无法只发给某一个站点。**
+
+需要主动提 PR 的目录（1024Store、awesome-dsh-plugin）都要求 `package.json` 声明
+`dsh.bundle`，纯 SKILL.md 仓库进不去。
+
+完整的机制说明、三个核心站点的逐项要求、已知坑和提交清单见
+**[docs/marketplace-listing.md](docs/marketplace-listing.md)**。
 
 ---
 
