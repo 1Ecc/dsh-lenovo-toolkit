@@ -12,8 +12,8 @@ import { existsSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
+import { ToolkitError } from '../../src/shared/errors.js'
 import {
-  BatteryCheckError,
   collect,
   defaultOutDir,
   detectPlatform,
@@ -22,7 +22,7 @@ import {
   readRules,
   renderTrend,
   summarize,
-} from '../src/battery.js'
+} from '../../src/tools/battery/collector.js'
 
 test('parseMetrics 只在第一个等号处切分，路径里的等号不能把值截断', () => {
   const m = parseMetrics(
@@ -69,7 +69,7 @@ test('readRules 能取到三份规则文档，未知名字要报错而不是返�
   assert.match(readRules('interpretation'), /健康度分级/)
   assert.match(readRules('platform'), /macOS/)
   assert.match(readRules('offers'), /触发条件/)
-  assert.throws(() => readRules('nope'), BatteryCheckError)
+  assert.throws(() => readRules('nope'), ToolkitError)
 })
 
 test('defaultOutDir 落在临时目录且带时间戳', () => {
@@ -81,7 +81,7 @@ test('defaultOutDir 落在临时目录且带时间戳', () => {
 test('renderTrend 对缺失的 metrics 文件给出可识别的错误码', async () => {
   await assert.rejects(
     () => renderTrend({ metricsPath: join(tmpdir(), 'definitely-not-here.env') }),
-    (e) => e instanceof BatteryCheckError && e.code === 'METRICS_MISSING',
+    (e) => e instanceof ToolkitError && e.code === 'METRICS_MISSING',
   )
 })
 
@@ -120,6 +120,6 @@ test('collect 集成测试：真实采集并解析出关键字段', { skip: plat
 test('collect 在不支持的平台上明确报错', { skip: platform !== 'unsupported' }, async () => {
   await assert.rejects(
     () => collect(),
-    (e) => e instanceof BatteryCheckError && e.code === 'UNSUPPORTED_PLATFORM',
+    (e) => e instanceof ToolkitError && e.code === 'UNSUPPORTED_PLATFORM',
   )
 })

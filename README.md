@@ -1,221 +1,37 @@
-# DSH Plugin — 电池健康度检测
+# dsh-lenovo-toolkit
 
-一个跨平台（macOS / Windows）的笔记本电池体检 skill，面向联想服务团队的一线咨询场景。
-输入是一句「帮我看看电池」，输出是一份服务顾问能照着讲、终端用户能看懂并且愿意相信的诊断报告。
+面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**联想专业工具集**。
+把联想服务体系里的专业判断能力——硬件诊断、备件、保修、服务网点——做成通用 agent 平台上可安装的插件。
 
-当前状态：**试点阶段**。macOS 已实机验证，Windows 已实现待验证。
+当前状态：**试点阶段**，第一个工具组是电池健康检测。macOS 已实机验证，Windows 已实现待验证。
+
+> **归属说明（待确认）**
+> 本仓库由联想服务团队成员维护，属于**试点性质的探索项目**，不代表联想官方发布，
+> 亦未经联想品牌方审阅。仓库中引用的联想服务入口与商品链接均为公开页面。
+> 如需正式化，应迁至 Lenovo 组织下并补充官方声明。
 
 ---
 
 ## 目录
 
-- [交付什么](#交付什么)
-- [能力矩阵](#能力矩阵)
-- [框架设计](#框架设计)
-- [关键数据口径](#关键数据口径)
-- [趋势图设计原则](#趋势图设计原则)
-- [推荐策略](#推荐策略软广)
-- [两种形态：Skill 与 Plugin](#两种形态skill-与-plugin)
+- [这是什么](#这是什么)
+- [工具组](#工具组)
 - [安装与使用](#安装与使用)
-- [目录结构](#目录结构)
-- [插件公共区收录](#插件公共区收录)
+- [仓库结构](#仓库结构)
+- [文档](#文档)
 - [已知待办](#已知待办)
 
 ---
 
-## 交付什么
+## 这是什么
 
-一次检测产出四份东西：
+正面抢占通用 agent 平台在现阶段极为困难，但平台之上的**公共技能／插件生态**准入门槛很低，
+且与联想的存量专业能力天然契合。这个仓库是这条路径的第一个验证载体。
 
-| 产物 | 形式 | 说明 |
-|---|---|---|
-| **诊断报告** | Markdown（对话正文） | 健康概览 → 解读 → 小建议 |
-| **容量衰减趋势图** | SVG，浏览器可直接打开 | 自适应明暗主题，实测与推算可视区分 |
-| **官方完整电池报告** | Windows 为 HTML，macOS 为 TXT | 系统原生数据，可存档、可发给服务网点 |
-| **服务推荐** | Markdown 独立小节 | **有触发条件，不满足时整节省略** |
+完整的判断、要验证的假设与指标见 **[docs/vision.md](docs/vision.md)**。
 
-报告结构是固定的，不允许随意调整章节顺序：
-
-```
-结论（一句话，含档位）
-一、电池健康概览   —— 电脑型号 / 电池型号 / 设计容量 / 当前充满容量 / 当前健康度 / 循环次数
-二、解读           —— 健康度 / 循环次数 / 衰减趋势，讲因果不复述数字
-三、小建议         —— 使用建议 / 置换建议（技术判断，不放商品链接）
-四、附件           —— 趋势图 + 官方报告路径
-（五、服务推荐）    —— 仅在触发时出现
-```
-
----
-
-## 能力矩阵
-
-| 能力 | macOS | Windows |
-|---|---|---|
-| 设备与电池标识（机型、MTM/型号、序列号、电池型号） | ✅ 已验证 | ⏳ 已实现待验证 |
-| 设计容量 / 满充容量 / 健康度 / 循环次数 | ✅ | ⏳ |
-| 双口径健康度（系统口径 + 电量计实测） | ✅ | 单口径（平台只给一个） |
-| 温度与寿命统计（历史最高温、累计运行时长） | ✅ | ➖ 平台不提供 |
-| 硬故障标志（永久故障、电芯断连） | ✅ | ➖ 平台不提供 |
-| 设计循环次数 | ✅ 系统提供 | ❌ 取不到，按 1000 次假设并在报告中标注 |
-| **原生历史容量记录** | ❌ 系统不提供，靠自建快照累积 | ✅ powercfg 自带数周~数月 |
-| 官方电池报告 | 系统原生数据汇总（TXT） | `powercfg /batteryreport`（HTML） |
-| 第三方依赖 | **零**（system_profiler / ioreg / plutil / pmset） | **零**（powercfg + WMI） |
-
-趋势图渲染需要 `python3`（仅标准库）。没有 python3 时跳过趋势图，报告其余部分照常输出。
-
----
-
-## 框架设计
-
-三层，各层职责不重叠：
-
-```
-┌─ scripts/     确定性的事 —— 采集、计算、渲染
-│               平台差异全部在这一层吃掉，输出统一的 KEY=VALUE
-├─ references/  判断性的事 —— 分级规则、话术素材、推荐策略
-│               模型按需读取，不进主上下文
-└─ SKILL.md     流程编排 —— 什么时候做什么、什么时候读哪份 reference
-```
-
-**为什么采集必须是脚本而不是让模型现敲命令**：平台坑太多且不直观（`plutil` 把错误文本打到
-stdout、`SPPowerDataType` 的分段顺序不固定、Intel 与 Apple Silicon 的 `MaxCapacity` 含义相反……）。
-这些每踩一次就是一份错误报告。脚本把坑一次性封死，模型只负责判读。
-
-**为什么判读规则放 references 而不是写进 SKILL.md**：判读规则有 180 行，包含分级表、速率公式、
-异常信号清单。全塞进 SKILL.md 会让每次触发都付出这份上下文成本，而实际上只有第 3 步用得到。
-
-**为什么脚本输出 `KEY=VALUE` 而不是 JSON**：采集脚本要做到零依赖，而 bash 里解析 JSON 很痛苦。
-`KEY=VALUE` 对 shell、Python、模型三方都友好。
-
-### 数据流
-
-```
-collect_macos.sh / collect_windows.ps1
-        │
-        ├──► metrics.env        统一的 KEY=VALUE 指标
-        ├──► history.tsv        历史快照（每天最多一条，反复运行会累积）
-        ├──► battery-report.*   官方报告
-        └──► raw/               原始 plist / XML / 文本，可复核
-                │
-                ▼
-        render_trend.py ──► battery-trend.svg
-                │
-                ▼
-        模型读 interpretation.md 判读 ──► 报告
-                │
-                ▼
-        模型读 lenovo-offers.md 判断 ──► 服务推荐（或省略）
-```
-
----
-
-## 关键数据口径
-
-`metrics.env` 里有**两个健康度**，含义不同，混用是这个任务最容易出的错：
-
-| 字段 | 含义 | 用途 |
-|---|---|---|
-| `health_pct_os` | 操作系统对外公布的最大容量百分比 | **对客户说话用这个** —— 他自己点开系统设置能看到同样的数字 |
-| `health_pct_raw` | 电量计实测：满充容量 ÷ 设计容量 | **判断电芯物理状态用这个** —— 直接来自电池管理芯片 |
-
-两者在 Apple Silicon 上经常差 5~10 个百分点（实测样本：系统 88% vs 电量计 97.9%），
-因为 macOS 叠加了循环数、高电量停留时长、温度历史做长期平滑。
-
-处理原则：
-
-- **取较低者作为风险判断依据**（偏保守：把好电池说坏会被投诉，把坏电池说好会被返修）
-- **取系统口径作为对客户陈述的数字**
-- 差 ≥ 3 个百分点时**必须主动解释**，不解释客户会觉得在糊弄
-
-完整规则见 [`interpretation.md`](.dsh/skills/battery-health-check/references/interpretation.md)。
-
-### 结论四档
-
-按顺序判，命中即停：
-
-1. **需要送修检测** —— 命中硬故障信号（永久故障标志、电芯断连、系统判定异常）
-2. **建议更换电池** —— 健康度 < 80%，或循环次数达设计寿命 100%
-3. **可以开始关注** —— 健康度 80%~85%，或衰减倍率 > 2，或循环次数达设计寿命 80%
-4. **状态健康** —— 以上都不命中。**此档不推荐任何更换类服务**
-
----
-
-## 趋势图设计原则
-
-两条红线，改代码时必须守住：
-
-**1. 实测点和推算线必须肉眼可分**（实心圆点 + 实线 vs 空心 + 虚线）。这张图会同时给服务顾问和
-客户看，把模型推算误读成历史实测会直接变成投诉。
-
-**2. 单点外推不给单一确定值。** 两种口径各自外推的结果能差几百次循环（实测样本：125 次 vs 714 次）。
-这时画成**推算区间楔形带**而不是一条看着很确定的线——否则一台其实很健康的机器会被画成马上要
-换电池，这种图拿去做服务推荐就是自毁信任。
-
-其他行为：
-
-- 横轴自适应：历史点 ≥ 3 且跨度 ≥ 14 天走**日期轴**，否则走**循环次数轴**并叠加厂商规格参考线
-- 楔形带在 80% 更换线处收口——过了更换线的外推没有决策价值
-- 已跌破 80% 时不播报"预计将会触及"，改为"约在 X 时已越过"
-- 图例只列图上实际画出来的元素
-- 通过 `prefers-color-scheme` 自适应明暗主题
-
----
-
-## 推荐策略（软广）
-
-### 纪律先于商品
-
-推荐环节挂在一份诊断报告后面，而报告的全部价值来自「客户相信这些数字没被动过手脚」。
-一旦客户察觉结论是被推荐目标反向凑出来的，他不但不下单，还会连带不信任前面所有数据。
-
-**顺序是硬性的：先出结论，再看结论是否触发推荐。** 三条不可突破：
-
-1. **不为了推荐而修改诊断**
-2. **不适配就不推** —— 硬推一块装不上的电池是纯负收益
-3. **推荐必须可见地是推荐** —— 单独成节、标题含「服务推荐」、放在报告最后，
-   不允许把商品链接混进「小建议」伪装成技术建议
-
-### 触发条件
-
-需同时满足「该推」和「能推」：
-
-```
-(A 结果触发  OR  B 意图触发)  AND  C 机型适配  →  推荐
-任一不满足                                    →  整节省略
-```
-
-- **A 结果触发**：结论为建议更换/需送修 · 健康度 < 80% · 循环数达设计寿命 100% ·
-  结论为「可以开始关注」（此档只给弱推荐，不催单）
-- **B 意图触发**：用户问「换电池多少钱」「续航不行了」「有推荐吗」等。
-  **可跨轮生效** —— 这轮结果健康就干净收尾不推，等用户自己问起来再推
-- **C 机型适配**：按 `device_vendor` / `device_model` 判断。
-  **非联想设备不推商品**，只给服务网点兜底，且措辞留有余地
-
-未触发时不留「如有需要可以…」这类悬着的广告尾巴。那句话省下来，等用户真的问起来再说，
-转化率和体验都更好。
-
-### 试点商品（仅此两项）
-
-| 商品 | 适用机型 | 最佳时机 |
-|---|---|---|
-| [拯救者 R/Y7000P 系列电池（2023/2024 款）](https://item.lenovo.com.cn/product/1045747.html) | 拯救者 R7000/R7000P/Y7000/Y7000P 2023-2024 款 | A 触发，确定要换 |
-| [笔记本电池延长 1 年保修服务](https://item.lenovo.com.cn/product/1027567.html) | ThinkPad X/T/P/neo/Z | 「可以开始关注」档——还没坏但衰减在加速，客户要的是兜底而非马上换 |
-
-### 通用服务入口（不受机型限制，保外直客兜底）
-
-保外直客的推荐顺序是 **先查保修状态 → 保外的话查备件价格 → 再到服务网点预约**。
-这个顺序站在客户角度（先搞清楚要不要花钱、花多少），比一上来甩商品链接更容易被接受。
-
-| 用途 | 链接 |
-|---|---|
-| 保修状态查询 | https://newsupport.lenovo.com.cn/guardeploySearch.html |
-| 备件价格查询 | https://newsupport.lenovo.com.cn/pricesearchpc-search.html |
-| 服务网点查询 | https://newsupport.lenovo.com.cn/serverNet.html |
-| 服务热线 | 400-990-8888 |
-
----
-
-## 两种形态：Skill 与 Plugin
+仓库定位是**一个容器**，不是单个工具。每类专业能力是一个工具组，
+加新工具组 = 加两个目录 + 在插件入口的 `GROUPS` 里加一行。
 
 同一套能力有两种交付形态，**互补而非二选一**：
 
@@ -226,7 +42,14 @@ collect_macos.sh / collect_windows.ps1
 | 安装 | 放进 skills 目录即被发现 | `dsh plugin add` |
 | 作用域 | 支持项目级 | profile 级 |
 
-Plugin 注册三个 DSH 原生工具：
+---
+
+## 工具组
+
+### 🔋 电池健康检测
+
+跨平台电池体检：容量、循环次数、双口径健康度、SVG 衰减趋势图、系统官方电池报告，
+以及基于结论触发的服务推荐。
 
 | 工具 | 作用 |
 |---|---|
@@ -237,6 +60,13 @@ Plugin 注册三个 DSH 原生工具：
 第三个工具的存在是为了让**只装了 Plugin 没装 Skill 的用户也能拿到判读标准**，
 否则模型会拿着一堆数字自由发挥，而判读规则正是这个项目最不该被绕过的部分。
 
+详见 **[docs/tools/battery-health.md](docs/tools/battery-health.md)**。
+
+### 计划中
+
+- 其他硬件诊断（存储健康、内存、散热、电源适配器）
+- 知识检索路径（服务知识库、保修政策、备件价格）
+
 ---
 
 ## 安装与使用
@@ -244,22 +74,20 @@ Plugin 注册三个 DSH 原生工具：
 ### 作为 DSH 插件
 
 ```bash
-dsh plugin --profile web add github:1Ecc/dsh-plugin
+dsh plugin --profile web add github:1Ecc/dsh-lenovo-toolkit
 ```
 
-装完重启 `dsh web` 并刷新页面，三个工具即可用。插件包内自带 skill 资源，
-所以不额外装 skill 也能工作。
+装完重启 `dsh web` 并刷新页面。插件包内自带 skill 资源，不额外装 skill 也能工作。
 
 ### 作为 DSH 项目级 skill
 
-克隆本仓库后，`.dsh/skills/battery-health-check/` 就是 DSH 的项目级 skill
-（优先级 100，扫描 `.dsh/skills/` 且**只扫顶层不递归**）。在该项目目录下启动 dsh 即可，
+克隆本仓库后，`.dsh/skills/` 下的目录就是 DSH 的项目级 skill（优先级 100，
+扫描 `.dsh/skills/` 且**只扫顶层不递归**）。在该项目目录下启动 dsh 即可，
 或用 `/battery-health-check` 手动触发。
 
 ### 作为 Claude Code skill
 
-skill 已放在 `.claude/skills/` 下，克隆本仓库后在该目录启动 Claude Code 即可自动识别。
-想全局可用就软链到用户级目录：
+`.claude/skills/` 下是同一份内容的副本。想全局可用就软链到用户级目录：
 
 ```bash
 ln -s "$(pwd)/.claude/skills/battery-health-check" ~/.claude/skills/battery-health-check
@@ -267,95 +95,83 @@ ln -s "$(pwd)/.claude/skills/battery-health-check" ~/.claude/skills/battery-heal
 
 触发方式：直接说「帮我看下电池健康度」「电脑越来越不耐用了」「电池还能用多久」即可。
 
-### 单独跑脚本
-
-macOS：
+### 开发
 
 ```bash
-bash .dsh/skills/battery-health-check/scripts/collect_macos.sh --outdir ./out
-python3 .dsh/skills/battery-health-check/scripts/render_trend.py --metrics ./out/metrics.env --out ./out/trend.svg
+npm test              # 单元 + 真实采集的集成测试
+npm run sync-skill    # .dsh/skills → .claude/skills
 ```
-
-Windows：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .dsh\skills\battery-health-check\scripts\collect_windows.ps1 -OutDir .\out
-python3 .dsh\skills\battery-health-check\scripts\render_trend.py --metrics .\out\metrics.env --out .\out\trend.svg
-```
-
-### 反复运行会越来越准
-
-每次采集都会往 `~/.battery-health-check/history.tsv` 追加一条快照（每天最多一条）。
-macOS 上系统不保存历史容量记录，所以首次检测的趋势只能靠模型推算；攒够 3 个点、
-跨度超过两周后，趋势图会自动切换成基于真实历史的日期轴曲线。
 
 ---
 
-## 目录结构
+## 仓库结构
 
 ```
-├── package.json                dsh.bundle 声明（可被 dsh plugin add 安装的凭证）
-├── cordis.patch.yml            DSH 安装时应用的 cordis 配置补丁
+├── package.json                    dsh.bundle 声明（可被 dsh plugin add 安装的凭证）
+├── cordis.patch.yml                DSH 安装时应用的 cordis 配置补丁
+│
 ├── src/
-│   ├── battery.js              纯逻辑：跑脚本、解析 metrics、渲染趋势（无 peer 依赖，可测）
-│   └── index.js                Cordis 插件壳：注册三个工具
-├── test/battery.test.js        单元 + 真实采集的集成测试
-├── docs/marketplace-listing.md 插件公共区收录机制、站点要求、我们的策略
-├── scripts/sync-skill.sh       .dsh/skills → .claude/skills 同步，防两份副本漂移
+│   ├── index.js                    插件入口：聚合注册各工具组
+│   ├── shared/                     跨工具组复用：错误类型、包内资源定位
+│   └── tools/
+│       └── battery/
+│           ├── collector.js        纯逻辑，无 peer 依赖，可独立测试
+│           └── register.js         注册该组的 DSH 工具
 │
-├── .dsh/skills/battery-health-check/     ← DSH 加载路径（唯一事实来源）
-│   ├── SKILL.md                流程编排与报告模板
-│   ├── scripts/
-│   │   ├── collect_macos.sh    macOS 采集（零依赖）
-│   │   ├── collect_windows.ps1 Windows 采集（powercfg + WMI）
-│   │   └── render_trend.py     趋势图渲染（仅标准库）
-│   └── references/
-│       ├── interpretation.md   判读规则：分级、速率公式、异常信号、结论四档
-│       ├── lenovo-offers.md    推荐策略：纪律、触发条件、试点商品、服务入口
-│       └── platform-notes.md   平台数据源、字段口径、已知坑
+├── test/tools/                     按工具组分目录
 │
-└── .claude/skills/battery-health-check/  ← Claude Code 加载路径（由 sync-skill.sh 生成）
+├── .dsh/skills/                    ← DSH skill 加载路径（唯一事实来源）
+│   └── battery-health-check/
+│       ├── SKILL.md                流程编排与报告模板
+│       ├── scripts/                平台采集脚本（零依赖）+ 趋势图渲染
+│       └── references/             判读规则、推荐策略、平台笔记
+│
+├── .claude/skills/                 ← Claude Code 加载路径（由 sync-skill.sh 生成）
+│
+├── docs/                           见下
+└── scripts/sync-skill.sh           两份 skill 副本的同步，防漂移
 ```
 
 两份 skill 副本是因为 DSH 扫 `.dsh/skills/`、Claude Code 扫 `.claude/skills/`，
 互不认对方的路径。软链在 Windows 上不可靠（本插件要跨平台），所以用真实副本 +
-`scripts/sync-skill.sh` 保持一致。改动请改 `.dsh/` 那份再同步。
+`scripts/sync-skill.sh` 保持一致。**改动请改 `.dsh/` 那份再同步。**
+
+### 加一个新工具组
+
+1. `src/tools/<组名>/{collector.js,register.js}` —— 纯逻辑与注册分离
+2. `.dsh/skills/<skill 名>/` —— SKILL.md + scripts + references，然后 `npm run sync-skill`
+3. `src/index.js` 的 `GROUPS` 加一行
+4. `test/tools/<组名>.test.js`
+5. `docs/tools/<组名>.md`
 
 ---
 
-## 插件公共区收录
+## 文档
 
-DSH **没有官方运营的插件市场**。所谓「上架」实际上是给仓库打 `dsh-plugin` topic，
-十几个社区聚合站每天自动扫描收录——**这是一次不可选择目标的广播，无法只发给某一个站点。**
-
-需要主动提 PR 的目录（1024Store、awesome-dsh-plugin）都要求 `package.json` 声明
-`dsh.bundle`，纯 SKILL.md 仓库进不去。
-
-完整的机制说明、三个核心站点的逐项要求、已知坑和提交清单见
-**[docs/marketplace-listing.md](docs/marketplace-listing.md)**。
+| 文档 | 内容 |
+|---|---|
+| [docs/vision.md](docs/vision.md) | **为什么做**：判断、要验证的假设、指标、工具规划、设计原则、风险边界 |
+| [docs/progress.md](docs/progress.md) | **做到哪了**：当前状态、已完成、核心结论、踩过的坑、未来计划、未验证缺口 |
+| [docs/marketplace-listing.md](docs/marketplace-listing.md) | **怎么进生态**：收录机制、三个核心站点的逐项要求、已知坑、提交清单 |
+| [docs/tools/battery-health.md](docs/tools/battery-health.md) | 电池工具组的能力矩阵、数据口径、趋势图设计原则、推荐策略 |
 
 ---
 
 ## 已知待办
 
-### Windows 实机验证
+**未验证的部分，不要在对外材料里跳过：**
 
-脚本已实现但未在 Windows 上跑过，首次验证重点核这四项：
+- Windows 采集脚本已实现但**从未在真实 Windows 上运行过**
+- `dsh plugin add` 的实际安装**未实测**（目录站 CI 只校验 manifest 形状，不安装不执行）
+- Cordis 工具注册按官方文档写就，**未在真实 DSH 运行时验证过**
+- 无埋点，转化数据完全空白
+- 品牌归属未定论
+- 拯救者电池商品 ID 待核对（需求方给的链接显示文本与 href 不一致）
 
-1. `powercfg /batteryreport /xml` 中 `HistoryEntry` 下容量字段的实际层级。
-   已做命名空间无关匹配（`local-name()`）+ 属性/子元素双兼容，但未验证。
-   **若 `history_points=0` 而 HTML 报告里明明有容量历史表，就是这里没匹配上。**
-2. `BatteryStaticData` 在部分机型上需要管理员权限
-3. `design_cycle_count` 取不到，按 1000 次假设，报告中须标明是假设值
-4. 容量单位是 **mWh** 不是 mAh（已用 `capacity_unit` 字段标明），不要跨平台比绝对值
+完整清单与优先级见 [docs/progress.md](docs/progress.md)。
 
-### 商品链接待核对
+---
 
-需求方给出的拯救者电池链接中，显示文本为 `1045746`、实际 href 为 `1045747`，两者不一致。
-当前采用 href 值，**上线前请核对正确的商品 ID**。
+## License
 
-### 进公共插件区前要补的
-
-- **埋点**：触发原因（A 结果触发 / B 意图触发）、机型是否匹配、推荐是否实际输出。
-  当前 skill **没有采集任何用户数据**，这部分需按平台埋点规范单独接，不要在 skill 里私自采集。
-- 商品清单的维护机制：商品 ID 会失效，需要有定期核对的责任人或自动巡检。
+[MIT](LICENSE)

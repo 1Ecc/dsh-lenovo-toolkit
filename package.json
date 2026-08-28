@@ -1,12 +1,11 @@
 {
-  "name": "dsh-plugin-battery-health",
+  "name": "dsh-lenovo-toolkit",
   "version": "0.1.0",
-  "description": "Battery health diagnostics for DeepSeek Harness: capacity, cycle count, dual health metrics, an SVG decay-trend chart and the OS battery report, on macOS and Windows.",
+  "description": "Lenovo professional tools for DeepSeek Harness. Battery health diagnostics on macOS and Windows, with more tools to follow.",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./battery": "./src/battery.js"
+    ".": "./src/index.js"
   },
   "files": [
     "src/",
@@ -30,22 +29,22 @@
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
-    "battery",
+    "lenovo",
     "battery-health",
     "diagnostics",
-    "hardware"
+    "toolkit"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/1Ecc/dsh-plugin.git"
+    "url": "git+https://github.com/1Ecc/dsh-lenovo-toolkit.git"
   },
-  "homepage": "https://github.com/1Ecc/dsh-plugin#readme",
+  "homepage": "https://github.com/1Ecc/dsh-lenovo-toolkit#readme",
   "bugs": {
-    "url": "https://github.com/1Ecc/dsh-plugin/issues"
+    "url": "https://github.com/1Ecc/dsh-lenovo-toolkit/issues"
   },
   "license": "MIT",
   "scripts": {
-    "test": "node test/battery.test.js",
+    "test": "node --test \"test/**/*.test.js\"",
     "sync-skill": "bash scripts/sync-skill.sh"
   }
 }

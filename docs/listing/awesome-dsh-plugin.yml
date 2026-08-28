@@ -10,8 +10,8 @@
 #
 # 注意 en 描述里有 "tools: " —— 冒号加空格，不加引号 YAML 会把它解析成嵌套键。
 # 这是 awesome-dsh-plugin 贡献指南点名的高频错误，我们自己第一次写就踩了。
-url: https://github.com/1Ecc/dsh-plugin
-name: 1Ecc/dsh-plugin
+url: https://github.com/1Ecc/dsh-lenovo-toolkit
+name: 1Ecc/dsh-lenovo-toolkit
 category: tools
 description:
   en: "Battery health diagnostics for macOS and Windows. Reports design capacity, current full-charge capacity, cycle count and two health figures (the OS-reported percentage and the gas-gauge full-charge/design ratio), renders an SVG capacity-decay chart, and saves the operating system's own battery report. Registers three tools: battery_health_collect, battery_health_trend and battery_health_rules."

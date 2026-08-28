@@ -3,23 +3,22 @@
  *
  * 这样拆是为了可测：DSH 的 @deepseek-ai/dsh-tools 是 peer 依赖，开发机上不一定装得到，
  * 如果把它 import 到同一个文件里，整个模块就没法在本地跑测试了。
- * 插件壳（src/index.js）负责对接 Cordis，这里只负责"把脚本跑起来并把结果解析成对象"。
+ * register.js 负责对接 Cordis，这里只负责"把脚本跑起来并把结果解析成对象"。
  */
 
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 
+import { ToolkitError } from '../../shared/errors.js'
+import { readSkillDoc, skillScript } from '../../shared/paths.js'
+
 const execFileAsync = promisify(execFile)
 
-/** 包根目录。脚本随 npm 包一起分发，路径要从这里推，不能依赖 cwd。 */
-export const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-
-/** skill 资源（SKILL.md / references / scripts）在包内的位置 */
-export const SKILL_DIR = join(PKG_ROOT, '.dsh', 'skills', 'battery-health-check')
+/** 本工具对应的 skill 名，也是 .dsh/skills/ 下的目录名 */
+export const SKILL = 'battery-health-check'
 
 const COLLECT_TIMEOUT_MS = 120_000
 const RENDER_TIMEOUT_MS = 60_000
@@ -27,14 +26,6 @@ const RENDER_TIMEOUT_MS = 60_000
 /** 采集脚本的退出码约定，和 collect_macos.sh / collect_windows.ps1 保持一致 */
 const EXIT_NO_BATTERY = 2
 const EXIT_WRONG_PLATFORM = 3
-
-export class BatteryCheckError extends Error {
-  constructor(message, code) {
-    super(message)
-    this.name = 'BatteryCheckError'
-    this.code = code
-  }
-}
 
 /** 当前平台，unsupported 表示 Linux 等暂未覆盖的系统 */
 export function detectPlatform() {
@@ -85,21 +76,17 @@ export function num(v) {
 export async function collect({ outDir } = {}) {
   const platform = detectPlatform()
   if (platform === 'unsupported') {
-    throw new BatteryCheckError(
+    throw new ToolkitError(
       `暂不支持当前平台 ${process.platform}，目前覆盖 macOS 与 Windows`,
       'UNSUPPORTED_PLATFORM',
     )
   }
 
   const dir = outDir ? resolve(outDir) : defaultOutDir()
-  const script = join(
-    SKILL_DIR,
-    'scripts',
+  const script = skillScript(
+    SKILL,
     platform === 'macos' ? 'collect_macos.sh' : 'collect_windows.ps1',
   )
-  if (!existsSync(script)) {
-    throw new BatteryCheckError(`采集脚本缺失：${script}`, 'SCRIPT_MISSING')
-  }
 
   const [cmd, args] =
     platform === 'macos'
@@ -115,18 +102,15 @@ export async function collect({ outDir } = {}) {
   } catch (err) {
     // 退出码是脚本主动约定的语义，要翻译成人能看懂的话，而不是把 shell 报错原样抛出去
     if (err.code === EXIT_NO_BATTERY) {
-      throw new BatteryCheckError(
-        '未检测到电池。台式机、电池已拆除，或系统未暴露电池信息',
-        'NO_BATTERY',
-      )
+      throw new ToolkitError('未检测到电池。台式机、电池已拆除，或系统未暴露电池信息', 'NO_BATTERY')
     }
     if (err.code === EXIT_WRONG_PLATFORM) {
-      throw new BatteryCheckError('采集脚本与当前系统不匹配', 'UNSUPPORTED_PLATFORM')
+      throw new ToolkitError('采集脚本与当前系统不匹配', 'UNSUPPORTED_PLATFORM')
     }
     if (err.killed) {
-      throw new BatteryCheckError('采集超时，脚本可能被系统权限弹窗阻塞', 'TIMEOUT')
+      throw new ToolkitError('采集超时，脚本可能被系统权限弹窗阻塞', 'TIMEOUT')
     }
-    throw new BatteryCheckError(`采集失败：${err.stderr || err.message}`, 'COLLECT_FAILED')
+    throw new ToolkitError(`采集失败：${err.stderr || err.message}`, 'COLLECT_FAILED')
   }
 
   // 优先读落盘的 metrics.env。脚本同时打到 stdout，但若外部工具往 stdout 掺了东西，
@@ -144,13 +128,9 @@ export async function collect({ outDir } = {}) {
  */
 export async function renderTrend({ metricsPath, outPath, historyPath } = {}) {
   if (!metricsPath || !existsSync(metricsPath)) {
-    throw new BatteryCheckError(`找不到 metrics 文件：${metricsPath}`, 'METRICS_MISSING')
+    throw new ToolkitError(`找不到 metrics 文件：${metricsPath}`, 'METRICS_MISSING')
   }
-  const script = join(SKILL_DIR, 'scripts', 'render_trend.py')
-  if (!existsSync(script)) {
-    throw new BatteryCheckError(`渲染脚本缺失：${script}`, 'SCRIPT_MISSING')
-  }
-
+  const script = skillScript(SKILL, 'render_trend.py')
   const out = outPath ? resolve(outPath) : join(dirname(metricsPath), 'battery-trend.svg')
   const args = [script, '--metrics', metricsPath, '--out', out]
   if (historyPath) args.push('--history', historyPath)
@@ -161,10 +141,10 @@ export async function renderTrend({ metricsPath, outPath, historyPath } = {}) {
       return { path: out }
     } catch (err) {
       if (err.code === 'ENOENT') continue // 换下一个解释器名再试
-      throw new BatteryCheckError(`趋势图渲染失败：${err.stderr || err.message}`, 'RENDER_FAILED')
+      throw new ToolkitError(`趋势图渲染失败：${err.stderr || err.message}`, 'RENDER_FAILED')
     }
   }
-  throw new BatteryCheckError(
+  throw new ToolkitError(
     '未找到 python3。趋势图需要 python3（仅用标准库），其余检测结果不受影响',
     'PYTHON_MISSING',
   )
@@ -179,14 +159,12 @@ export function readRules(which = 'interpretation') {
   }
   const rel = files[which]
   if (!rel) {
-    throw new BatteryCheckError(
+    throw new ToolkitError(
       `未知的规则文档 ${which}，可选：${Object.keys(files).join(' / ')}`,
       'UNKNOWN_RULES',
     )
   }
-  const p = join(SKILL_DIR, rel)
-  if (!existsSync(p)) throw new BatteryCheckError(`规则文档缺失：${p}`, 'RULES_MISSING')
-  return readFileSync(p, 'utf8')
+  return readSkillDoc(SKILL, rel)
 }
 
 /**
