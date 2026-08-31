@@ -102,3 +102,29 @@ test('每个 skill 的 frontmatter 都要加引号，否则 DSH 会静默拒绝'
     }
   }
 })
+
+test('Cordis 工具 schema 遵守 DSH 的显式约束', () => {
+  const toolsRoot = join(ROOT, 'src', 'tools')
+  const registerFiles = walk(toolsRoot)
+    .filter((p) => p.endsWith('register.js'))
+    .map((p) => join(toolsRoot, p))
+
+  assert.ok(registerFiles.length > 0, '至少应有一个工具组注册文件')
+
+  for (const p of registerFiles) {
+    const source = readFileSync(p, 'utf8')
+
+    // dsh-tools 0.1.1 开始把 required 视为“出现即为 true”，可选参数必须省略该字段。
+    assert.doesNotMatch(source, /required\s*:\s*false/, `${relative(ROOT, p)} 不能写 required: false`)
+
+    // 对象输出若不明示开放或关闭额外属性，新版 schema 编译器会拒绝加载整个插件。
+    const objectOutputs = source.matchAll(/schema\s*:\s*\{([^}]*)type\s*:\s*['"]object['"]([^}]*)\}/g)
+    for (const match of objectOutputs) {
+      assert.match(
+        `${match[1]}${match[2]}`,
+        /additionalProperties\s*:\s*(true|false)/,
+        `${relative(ROOT, p)} 的 object 输出 schema 必须显式声明 additionalProperties`,
+      )
+    }
+  }
+})

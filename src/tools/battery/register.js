@@ -23,12 +23,11 @@ export function register(ctx) {
       parameters: {
         outDir: {
           type: 'string',
-          required: false,
           description: '输出目录。不传则写到系统临时目录下的带时间戳目录。',
         },
       },
       output: {
-        schema: { type: 'object' },
+        schema: { type: 'object', additionalProperties: true },
         render: (_args, v) => [
           { type: 'text', text: summarize(v.metrics) },
           {
@@ -71,12 +70,11 @@ export function register(ctx) {
         },
         outPath: {
           type: 'string',
-          required: false,
           description: '输出 SVG 路径。不传则与 metrics.env 同目录，命名为 battery-trend.svg。',
         },
       },
       output: {
-        schema: { type: 'object' },
+        schema: { type: 'object', additionalProperties: true },
         render: (_args, v) => [{ type: 'text', text: `趋势图已生成：${v.path}` }],
       },
       async execute(args) {
@@ -99,7 +97,6 @@ export function register(ctx) {
       parameters: {
         which: {
           type: 'string',
-          required: false,
           description: 'interpretation（默认）/ platform / offers',
         },
       },
