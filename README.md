@@ -154,6 +154,8 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 | [docs/progress.md](docs/progress.md) | **做到哪了**：当前状态、已完成、核心结论、踩过的坑、未来计划、未验证缺口 |
 | [docs/marketplace-listing.md](docs/marketplace-listing.md) | **怎么进生态**：收录机制、三个核心站点的逐项要求、已知坑、提交清单 |
 | [docs/tools/battery-health.md](docs/tools/battery-health.md) | 电池工具组的能力矩阵、数据口径、趋势图设计原则、推荐策略 |
+| [AGENTS.md](AGENTS.md) | **给 AI agent 的说明**：硬性约束、单一事实来源、代码约定、高频陷阱 |
+| [handoff.md](handoff.md) | **交接文档**：冷启动接手所需的一切 |
 
 ---
 
