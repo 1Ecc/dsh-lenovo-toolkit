@@ -3,7 +3,7 @@
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**联想专业工具集**。
 把联想服务体系里的专业判断能力——硬件诊断、备件、保修、服务网点——做成通用 agent 平台上可安装的插件。
 
-当前状态：**试点阶段**，第一个工具组是电池健康检测。macOS 已实机验证，Windows 已实现待验证。
+当前状态：**试点阶段**。电池工具组保留原实现；另已迁入 Windows 设备、性能、存储、Wi-Fi、应用查询、报告和受控操作能力，等待真实 DSH 运行时验证。
 
 > **归属说明（待确认）**
 > 本仓库由联想服务团队成员维护，属于**试点性质的探索项目**，不代表联想官方发布，
@@ -62,9 +62,20 @@
 
 详见 **[docs/tools/battery-health.md](docs/tools/battery-health.md)**。
 
+### Windows 设备助手
+
+从想帮帮 Device MCP 迁入 14 个非电池工具，保持原来的结构化状态、隐私最小化和操作确认边界：
+
+- 设备、性能、进程、存储和应用查询；
+- Wi-Fi 状态、基础诊断和 5～60 秒网络波动监测；
+- 脱敏的 Wi-Fi SVG 与自包含 HTML 报告；
+- 打开受控设置、应用、官方 URL 和复制诊断摘要，均要求用户逐次明确确认。
+
+这些能力当前仅支持 Windows；详细契约见 **[docs/tools/windows-device.md](docs/tools/windows-device.md)**。
+
 ### 计划中
 
-- 其他硬件诊断（存储健康、内存、散热、电源适配器）
+- 更深层硬件诊断（SMART、散热、电源适配器等）
 - 知识检索路径（服务知识库、保修政策、备件价格）
 
 ---
@@ -114,9 +125,10 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 │   ├── index.js                    插件入口：聚合注册各工具组
 │   ├── shared/                     跨工具组复用：错误类型、包内资源定位
 │   └── tools/
-│       └── battery/
-│           ├── collector.js        纯逻辑，无 peer 依赖，可独立测试
-│           └── register.js         注册该组的 DSH 工具
+│       ├── battery/                电池采集、趋势与规则工具
+│       ├── device/                 设备、性能、进程、存储与应用查询
+│       ├── wifi/                   Wi-Fi 诊断、监测与报告
+│       └── actions/                需逐次确认的低风险操作
 │
 ├── test/tools/                     按工具组分目录
 │
@@ -125,6 +137,14 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 │       ├── SKILL.md                流程编排与报告模板
 │       ├── scripts/                平台采集脚本（零依赖）+ 趋势图渲染
 │       └── references/             判读规则、推荐策略、平台笔记
+│   ├── device-overview/
+│   ├── performance-diagnosis/
+│   ├── storage-diagnosis/
+│   ├── wifi-diagnosis/
+│   ├── wifi-health-report/
+│   ├── app-diagnosis/
+│   ├── service-recommendation/
+│   └── xiangbangbang-device-assistant/
 │
 ├── .claude/skills/                 ← Claude Code 加载路径（由 sync-skill.sh 生成）
 │
@@ -154,6 +174,7 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 | [docs/progress.md](docs/progress.md) | **做到哪了**：当前状态、已完成、核心结论、踩过的坑、未来计划、未验证缺口 |
 | [docs/marketplace-listing.md](docs/marketplace-listing.md) | **怎么进生态**：收录机制、三个核心站点的逐项要求、已知坑、提交清单 |
 | [docs/tools/battery-health.md](docs/tools/battery-health.md) | 电池工具组的能力矩阵、数据口径、趋势图设计原则、推荐策略 |
+| [docs/tools/windows-device.md](docs/tools/windows-device.md) | Windows 非电池工具、隐私与确认边界、迁移状态 |
 | [AGENTS.md](AGENTS.md) | **给 AI agent 的说明**：硬性约束、单一事实来源、代码约定、高频陷阱 |
 | [handoff.md](handoff.md) | **交接文档**：冷启动接手所需的一切 |
 

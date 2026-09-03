@@ -16,6 +16,9 @@
  */
 
 import * as battery from './tools/battery/register.js'
+import * as device from './tools/device/register.js'
+import * as wifi from './tools/wifi/register.js'
+import * as actions from './tools/actions/register.js'
 
 export const name = 'lenovo-toolkit'
 
@@ -23,7 +26,7 @@ export const name = 'lenovo-toolkit'
 export const inject = ['tools']
 
 /** 已启用的工具组。新增专业工具时在这里追加。 */
-const GROUPS = [battery]
+const GROUPS = [battery, device, wifi, actions]
 
 export function apply(ctx) {
   for (const g of GROUPS) g.register(ctx)

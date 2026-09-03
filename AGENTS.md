@@ -21,8 +21,8 @@
 2. **不确定就说不确定。** 数据不足时给区间和条件，不给假装精确的数字。
    虚假的确定性在服务场景里会直接变成投诉。
 
-3. **采集脚本零第三方依赖。** macOS 只用 `system_profiler`/`ioreg`/`plutil`/`pmset`，
-   Windows 只用 `powercfg` + WMI。脚本要能直接扔到客户机器上跑。
+3. **采集脚本零第三方依赖。** macOS 电池采集只用 `system_profiler`/`ioreg`/`plutil`/`pmset`；
+   Windows 采集只用系统自带的 CIM/WMI、`powercfg`、网络命令和注册表接口。脚本要能直接扔到客户机器上跑。
    趋势图渲染只用 Python 标准库。**不要引入 npm/pip 依赖来"简化"这些脚本。**
 
 4. **实测与推算必须可区分。** 图表上实测点用实线实心点、推算用虚线；

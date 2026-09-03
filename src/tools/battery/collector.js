@@ -135,17 +135,36 @@ export async function renderTrend({ metricsPath, outPath, historyPath } = {}) {
   const args = [script, '--metrics', metricsPath, '--out', out]
   if (historyPath) args.push('--history', historyPath)
 
-  for (const py of ['python3', 'python']) {
+  // Windows 的“应用执行别名”可能让 python3 看似存在、执行却立即失败；先用 --version
+  // 验证解释器真的可用，避免把“没装 Python”误报成趋势图脚本执行失败。
+  const interpreters =
+    process.platform === 'win32'
+      ? [
+          ['py', ['-3']],
+          ['python', []],
+          ['python3', []],
+        ]
+      : [
+          ['python3', []],
+          ['python', []],
+        ]
+
+  for (const [py, prefix] of interpreters) {
     try {
-      await execFileAsync(py, args, { timeout: RENDER_TIMEOUT_MS })
+      await execFileAsync(py, [...prefix, '--version'], { timeout: 10_000 })
+    } catch {
+      continue
+    }
+
+    try {
+      await execFileAsync(py, [...prefix, ...args], { timeout: RENDER_TIMEOUT_MS })
       return { path: out }
     } catch (err) {
-      if (err.code === 'ENOENT') continue // 换下一个解释器名再试
       throw new ToolkitError(`趋势图渲染失败：${err.stderr || err.message}`, 'RENDER_FAILED')
     }
   }
   throw new ToolkitError(
-    '未找到 python3。趋势图需要 python3（仅用标准库），其余检测结果不受影响',
+    '当前进程无法调用 Python 3。趋势图需要 Python 3（仅用标准库），其余检测结果不受影响',
     'PYTHON_MISSING',
   )
 }

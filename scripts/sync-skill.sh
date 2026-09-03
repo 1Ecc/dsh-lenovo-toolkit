@@ -20,10 +20,16 @@ if [ ! -d "$SRC" ]; then
 fi
 
 mkdir -p "$DST"
-rm -rf "${DST:?}/battery-health-check"
-cp -R "$SRC/battery-health-check" "$DST/battery-health-check"
 
-if diff -r "$SRC/battery-health-check" "$DST/battery-health-check" >/dev/null 2>&1; then
+# 所有顶层 skill 都要同步。只同步 battery 会让新增工具组在 Claude Code 形态下静默缺失。
+for skill in "$SRC"/*; do
+  [ -d "$skill" ] || continue
+  name="$(basename "$skill")"
+  rm -rf "${DST:?}/$name"
+  cp -R "$skill" "$DST/$name"
+done
+
+if diff -r "$SRC" "$DST" >/dev/null 2>&1; then
   echo "✅ 已同步 $SRC → $DST"
 else
   echo "ERROR: 同步后仍存在差异" >&2

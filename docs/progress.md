@@ -1,6 +1,6 @@
 # 进展、结论与计划
 
-更新于 2026-08-28。为什么做见 [vision.md](vision.md)，收录机制见 [marketplace-listing.md](marketplace-listing.md)。
+更新于 2026-09-02。为什么做见 [vision.md](vision.md)，收录机制见 [marketplace-listing.md](marketplace-listing.md)。
 
 ## 目录
 
@@ -19,9 +19,9 @@
 |---|---|
 | 仓库 | `1Ecc/dsh-lenovo-toolkit`，public |
 | 形态 | Skill（项目级）+ Cordis Plugin（bundle） |
-| 工具组 | 1 个（电池健康），注册 3 个 DSH 工具 |
-| 平台 | macOS ✅ 实机验证；Windows ⏳ 已实现未验证 |
-| 测试 | 8 通过 1 跳过，含真实采集的集成测试 |
+| 工具组 | 本地源码 4 个（电池、Windows 设备、Wi-Fi、受控操作），共注册 17 个 DSH 工具 |
+| 平台 | 电池：macOS ✅、Windows ⏳；新增非电池能力仅支持 Windows，原 MCP 已验证但 DSH 注册壳待验证 |
+| 测试 | 新增迁移结构/安全单测 9 项通过；电池原有集成测试本次未重复执行 |
 | 生态收录 | 1024Store ✅ 已合并；topic 聚合站 ✅ 已打 topic；awesome-dsh-plugin ⏳ 等门槛 |
 | 埋点 | ❌ 无 |
 
@@ -35,6 +35,7 @@
 - **系统官方电池报告**（Windows 为 powercfg HTML，macOS 为系统原生数据汇总）
 - **判读规则体系**：健康度分级、循环次数分级、衰减速率公式、异常信号清单、结论四档
 - **服务推荐策略**：纪律三条、触发公式、试点商品、保外直客的推荐顺序
+- **Windows 非电池能力（本地迁入）**：设备、性能、进程、存储、应用、Wi-Fi、网络监测、脱敏报告和四个需确认的低风险操作，共 14 个工具；另含 8 个 DSH Skill（含总路由）
 
 ### 工程
 
@@ -43,6 +44,7 @@
 - 趋势图渲染只用 Python 标准库
 - 插件用 ESM JavaScript，**无构建步骤**，从源码装不需要 `allowBuilds` 授权
 - 纯逻辑与 Cordis 壳分离，纯逻辑可在没有 peer 依赖的环境里完整测试
+- 新增能力保留统一 `ToolEnvelope`、URL 白名单、数据最小化和逐次确认边界；原想帮帮工程文件保持不变
 
 ### 生态
 

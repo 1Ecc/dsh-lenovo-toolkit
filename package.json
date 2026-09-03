@@ -1,7 +1,7 @@
 {
   "name": "dsh-lenovo-toolkit",
   "version": "0.1.1",
-  "description": "Lenovo professional tools for DeepSeek Harness. Battery health diagnostics on macOS and Windows, with more tools to follow.",
+  "description": "Lenovo professional tools for DeepSeek Harness: battery health plus Windows device, performance, storage, Wi-Fi, app and safe-action tools.",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
@@ -31,6 +31,8 @@
     "deepseek-harness",
     "lenovo",
     "battery-health",
+    "windows-diagnostics",
+    "wifi-diagnostics",
     "diagnostics",
     "toolkit"
   ],

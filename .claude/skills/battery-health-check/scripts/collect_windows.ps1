@@ -1,4 +1,4 @@
-<#
+﻿<#
 电池健康度采集器 —— Windows
 
 设计目标：零第三方依赖。只用系统自带的 powercfg + CIM/WMI，这样在客户机器上不需要装任何东西。
@@ -62,17 +62,19 @@ $fullChg  = Get-CimSafe 'BatteryFullChargedCapacity'  -Namespace 'root\WMI' | Se
 $cycle    = Get-CimSafe 'BatteryCycleCount'           -Namespace 'root\WMI' | Select-Object -First 1
 $status   = Get-CimSafe 'BatteryStatus'               -Namespace 'root\WMI' | Select-Object -First 1
 
-# 落一份原始 CIM 数据，便于后续复核
-foreach ($pair in @(
-    @{n='Win32_ComputerSystem';        o=$cs},
-    @{n='Win32_ComputerSystemProduct'; o=$csp},
-    @{n='Win32_BIOS';                  o=$bios},
-    @{n='Win32_Battery';               o=$batt},
-    @{n='BatteryStaticData';           o=$static},
-    @{n='BatteryFullChargedCapacity';  o=$fullChg},
-    @{n='BatteryCycleCount';           o=$cycle},
+# 落一份原始 CIM 数据，便于后续复核。
+# Windows PowerShell 5.1 解析数组中的连续哈希表时需要显式语句分隔符；先保存数组并用分号分隔。
+$cimPairs = @(
+    @{n='Win32_ComputerSystem';        o=$cs};
+    @{n='Win32_ComputerSystemProduct'; o=$csp};
+    @{n='Win32_BIOS';                  o=$bios};
+    @{n='Win32_Battery';               o=$batt};
+    @{n='BatteryStaticData';           o=$static};
+    @{n='BatteryFullChargedCapacity';  o=$fullChg};
+    @{n='BatteryCycleCount';           o=$cycle};
     @{n='BatteryStatus';               o=$status}
-)) {
+)
+foreach ($pair in $cimPairs) {
     if ($pair.o) { $pair.o | Format-List * | Out-File (Join-Path $RawDir ($pair.n + '.txt')) -Encoding utf8 }
 }
 

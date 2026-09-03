@@ -87,7 +87,7 @@ test('renderTrend 对缺失的 metrics 文件给出可识别的错误码', async
 
 const platform = detectPlatform()
 
-test('collect 集成测试：真实采集并解析出关键字段', { skip: platform === 'unsupported' }, async () => {
+test('collect 集成测试：真实采集并解析出关键字段', { skip: platform === 'unsupported' }, async (t) => {
   const out = join(tmpdir(), `bh-test-${process.pid}`)
   try {
     const r = await collect({ outDir: out })
@@ -107,8 +107,15 @@ test('collect 集成测试：真实采集并解析出关键字段', { skip: plat
 
     // 趋势图串联
     const svg = join(out, 'trend.svg')
-    const t = await renderTrend({ metricsPath: r.metricsPath, outPath: svg })
-    assert.equal(t.path, svg)
+    let trend
+    try {
+      trend = await renderTrend({ metricsPath: r.metricsPath, outPath: svg })
+    } catch (err) {
+      assert.equal(err.code, 'PYTHON_MISSING', '已安装解释器时，趋势图渲染错误不能被静默跳过')
+      t.diagnostic('当前测试进程无法调用 Python，已验证 PYTHON_MISSING 降级；电池采集结果不受影响')
+      return
+    }
+    assert.equal(trend.path, svg)
     const content = readFileSync(svg, 'utf8')
     assert.match(content, /^<svg /, 'SVG 应以 <svg 开头')
     assert.match(content, /80% 建议更换线/, '应画出 80% 更换线')
