@@ -1,4 +1,4 @@
-import { wifiDiagnoseFromStatus, wifiGetStatus, } from "../device/collector.js";
+import { wifiDiagnoseFromStatus, wifiGetStatus, } from "./collector.js";
 import { success } from "../../shared/result.js";
 function withoutReportData(source) {
     return { ...source, data: null };

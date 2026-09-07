@@ -128,3 +128,101 @@ test('Cordis 工具 schema 遵守 DSH 的显式约束', () => {
     }
   }
 })
+
+/**
+ * 能力域框架守卫。
+ *
+ * 「一个工具组 = 一个能力域，各自带齐 collector / register / 文档 / 测试」这条约定
+ * 写在 AGENTS.md 里，但约定不会自己执行——迁入 14 个工具那次就漂了：
+ * device 一个组塞了 5 个工具对应 3 个 skill，wifi 和 actions 连文档和测试都没有。
+ * 光靠 review 拦不住，所以在这里把约定变成断言。
+ */
+test('每个能力域都要带齐 collector / register / 文档 / 测试，并挂进入口', () => {
+  const toolsRoot = join(ROOT, 'src', 'tools')
+  const groups = readdirSync(toolsRoot)
+    .filter((n) => statSync(join(toolsRoot, n)).isDirectory())
+    .sort()
+
+  assert.ok(groups.length > 0, '至少应有一个能力域')
+
+  const index = readFileSync(join(ROOT, 'src', 'index.js'), 'utf8')
+
+  for (const g of groups) {
+    for (const required of ['collector.js', 'register.js']) {
+      assert.ok(
+        existsSync(join(toolsRoot, g, required)),
+        `src/tools/${g}/ 缺 ${required}（额外的纯逻辑模块可以有，这两个必须有）`,
+      )
+    }
+
+    const register = readFileSync(join(toolsRoot, g, 'register.js'), 'utf8')
+    assert.match(
+      register,
+      new RegExp(`export const group = '${g}'`),
+      `src/tools/${g}/register.js 的 group 常量必须等于目录名，否则日志里对不上号`,
+    )
+
+    assert.match(
+      index,
+      new RegExp(`from './tools/${g}/register.js'`),
+      `src/tools/${g}/ 没挂进 src/index.js 的 GROUPS——工具写了但不会被注册`,
+    )
+
+    assert.ok(
+      existsSync(join(ROOT, 'test', 'tools', `${g}.test.js`)),
+      `缺 test/tools/${g}.test.js`,
+    )
+    assert.ok(
+      existsSync(join(ROOT, 'docs', 'tools', `${g}.md`)),
+      `缺 docs/tools/${g}.md`,
+    )
+  }
+})
+
+/**
+ * 工具名是插件的对外契约：改名或重名都会让已经写好的 skill 调不到工具。
+ * 这里不写死总数会更"灵活"，但也就守不住"迁移时漏掉一个工具"这类问题——
+ * 所以刻意写死，改动工具数时必须同步改这里，逼人确认这是有意为之。
+ */
+test('全仓库共注册 17 个工具，名字不得重复', () => {
+  const toolsRoot = join(ROOT, 'src', 'tools')
+  const source = walk(toolsRoot)
+    .filter((p) => p.endsWith('register.js'))
+    .map((p) => readFileSync(join(toolsRoot, p), 'utf8'))
+    .join('\n')
+
+  const names = [...source.matchAll(/name:\s*'([^']+)'/g)].map((m) => m[1])
+  assert.equal(names.length, 17, '工具总数变了；确认是有意的再改这个数字')
+  assert.equal(new Set(names).size, names.length, '有重名工具，后注册的会覆盖先注册的')
+})
+
+/**
+ * 迁入非电池工具时最容易犯的错：把原项目自带的电池能力一起搬进来，
+ * 于是仓库里出现两套电池实现，判读口径开始分叉。
+ */
+test('电池能力只有一套实现', () => {
+  const index = readFileSync(join(ROOT, 'src', 'index.js'), 'utf8')
+  assert.equal((index.match(/battery\/register\.js/g) || []).length, 1)
+
+  const toolsRoot = join(ROOT, 'src', 'tools')
+  const strayBattery = walk(toolsRoot)
+    .filter((p) => !p.startsWith('battery') && p.endsWith('.js'))
+    .filter((p) => /battery/i.test(readFileSync(join(toolsRoot, p), 'utf8')))
+  assert.deepEqual(strayBattery, [], '非电池能力域里出现了电池相关代码')
+})
+
+/**
+ * 总路由 skill 决定了模型先看哪个能力域。它一旦指向已经不存在的工具名，
+ * 症状是"skill 触发了但什么也没发生"，很难查。
+ */
+test('总路由 skill 指向现存能力，且不复活旧的电池路由', () => {
+  const rootSkill = readFileSync(
+    join(ROOT, '.dsh', 'skills', 'xiangbangbang-device-assistant', 'SKILL.md'),
+    'utf8',
+  )
+  assert.match(rootSkill, /`battery-health-check`/)
+  assert.match(rootSkill, /`service-recommendation`/)
+  assert.match(rootSkill, /服务网点、价格或适配性/)
+  assert.match(rootSkill, /服务入口不能跳过必要诊断/)
+  assert.doesNotMatch(rootSkill, /`battery_diagnosis`|`battery_get_health`/)
+})

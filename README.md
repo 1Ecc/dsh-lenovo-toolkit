@@ -3,7 +3,7 @@
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**联想专业工具集**。
 把联想服务体系里的专业判断能力——硬件诊断、备件、保修、服务网点——做成通用 agent 平台上可安装的插件。
 
-当前状态：**试点阶段**。电池工具组保留原实现；另已迁入 Windows 设备、性能、存储、Wi-Fi、应用查询、报告和受控操作能力，等待真实 DSH 运行时验证。
+当前状态：**试点阶段**。共 **7 个能力域 / 17 个 DSH 工具 / 9 个 skill**——电池跨 macOS 与 Windows，其余六个能力域（设备、性能、存储、应用、Wi-Fi、受控操作）仅支持 Windows，**等待真实 DSH 运行时验证**。
 
 > **归属说明（待确认）**
 > 本仓库由联想服务团队成员维护，属于**试点性质的探索项目**，不代表联想官方发布，
@@ -60,18 +60,23 @@
 第三个工具的存在是为了让**只装了 Plugin 没装 Skill 的用户也能拿到判读标准**，
 否则模型会拿着一堆数字自由发挥，而判读规则正是这个项目最不该被绕过的部分。
 
-详见 **[docs/tools/battery-health.md](docs/tools/battery-health.md)**。
+详见 **[docs/tools/battery.md](docs/tools/battery.md)**。
 
-### Windows 设备助手
+### Windows 设备助手（6 个能力域，14 个工具）
 
-从想帮帮 Device MCP 迁入 14 个非电池工具，保持原来的结构化状态、隐私最小化和操作确认边界：
+从想帮帮 Device MCP 迁入，保持原来的结构化状态、隐私最小化和操作确认边界。
+**当前仅支持 Windows。**
 
-- 设备、性能、进程、存储和应用查询；
-- Wi-Fi 状态、基础诊断和 5～60 秒网络波动监测；
-- 脱敏的 Wi-Fi SVG 与自包含 HTML 报告；
-- 打开受控设置、应用、官方 URL 和复制诊断摘要，均要求用户逐次明确确认。
+| 能力域 | 工具 | 回答什么 |
+|---|---|---|
+| `device` | `device_get_info` | 这台机器是什么配置 |
+| `performance` | `performance_get_status` · `process_list` | 怎么这么卡 |
+| `storage` | `storage_get_status` | 盘是不是满了 |
+| `app` | `app_list` | 装没装某某软件 |
+| `wifi` | `wifi_get_status` · `wifi_diagnose` · `network_monitor` · `wifi_generate_report` · `wifi_generate_html_report` | 网怎么这么慢／连不上，并出脱敏体检报告 |
+| `actions` | `open_system_settings` · `open_app` · `open_url` · `copy_diagnostic_report` | 唯一会改变机器状态的一组，**每次调用都要用户明确确认** |
 
-这些能力当前仅支持 Windows；详细契约见 **[docs/tools/windows-device.md](docs/tools/windows-device.md)**。
+逐项契约、隐私边界与判读纪律见 **[docs/tools/](docs/tools/README.md)**。
 
 ### 计划中
 
@@ -124,27 +129,33 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 ├── src/
 │   ├── index.js                    插件入口：聚合注册各工具组
 │   ├── shared/                     跨工具组复用：错误类型、包内资源定位
-│   └── tools/
-│       ├── battery/                电池采集、趋势与规则工具
-│       ├── device/                 设备、性能、进程、存储与应用查询
-│       ├── wifi/                   Wi-Fi 诊断、监测与报告
+│   └── tools/                      一个子目录 = 一个能力域，各含 collector.js + register.js
+│       ├── battery/                电池采集、趋势与规则（唯一跨平台的一组）
+│       ├── device/                 设备概况
+│       ├── performance/            性能与进程
+│       ├── storage/                存储空间
+│       ├── app/                    已安装应用查询
+│       ├── wifi/                   Wi-Fi 诊断、监测与脱敏报告
 │       └── actions/                需逐次确认的低风险操作
 │
-├── test/tools/                     按工具组分目录
+├── test/
+│   ├── repo.test.js                仓库一致性守卫（含能力域框架守卫）
+│   ├── helpers/                    跨组复用的断言
+│   └── tools/<能力域>.test.js       每个能力域一份，与 src/tools/ 一一对应
 │
-├── .dsh/skills/                    ← DSH skill 加载路径（唯一事实来源）
-│   └── battery-health-check/
-│       ├── SKILL.md                流程编排与报告模板
-│       ├── scripts/                平台采集脚本（零依赖）+ 趋势图渲染
-│       └── references/             判读规则、推荐策略、平台笔记
-│   ├── device-overview/
+├── .dsh/skills/                    ← DSH skill 加载路径（唯一事实来源，共 9 个）
+│   ├── xiangbangbang-device-assistant/  总路由：在其余 skill 之间选最少的那个
+│   ├── battery-health-check/       电池（唯一跨平台的一个）
+│   │   ├── SKILL.md                流程编排与报告模板
+│   │   ├── scripts/                平台采集脚本（零依赖）+ 趋势图渲染
+│   │   └── references/             判读规则、推荐策略、平台笔记
+│   ├── device-overview/            以下 7 个当前仅支持 Windows
 │   ├── performance-diagnosis/
 │   ├── storage-diagnosis/
 │   ├── wifi-diagnosis/
 │   ├── wifi-health-report/
 │   ├── app-diagnosis/
-│   ├── service-recommendation/
-│   └── xiangbangbang-device-assistant/
+│   └── service-recommendation/
 │
 ├── .claude/skills/                 ← Claude Code 加载路径（由 sync-skill.sh 生成）
 │
@@ -156,13 +167,17 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 互不认对方的路径。软链在 Windows 上不可靠（本插件要跨平台），所以用真实副本 +
 `scripts/sync-skill.sh` 保持一致。**改动请改 `.dsh/` 那份再同步。**
 
-### 加一个新工具组
+### 加一个新能力域
 
-1. `src/tools/<组名>/{collector.js,register.js}` —— 纯逻辑与注册分离
+**一个工具组 = 一个能力域**，按「用户会分开问的问题」切分，不按实现方便切分。
+下面五步缺一不可，`test/repo.test.js` 的框架守卫会逐条检查：
+
+1. `src/tools/<能力域>/{collector.js,register.js}` —— 纯逻辑与 Cordis 壳分离；
+   `register.js` 里 `export const group` 必须等于目录名
 2. `.dsh/skills/<skill 名>/` —— SKILL.md + scripts + references，然后 `npm run sync-skill`
 3. `src/index.js` 的 `GROUPS` 加一行
-4. `test/tools/<组名>.test.js`
-5. `docs/tools/<组名>.md`
+4. `test/tools/<能力域>.test.js`
+5. `docs/tools/<能力域>.md`，并在 `docs/tools/README.md` 的表里加一行
 
 ---
 
@@ -172,9 +187,9 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 |---|---|
 | [docs/vision.md](docs/vision.md) | **为什么做**：判断、要验证的假设、指标、工具规划、设计原则、风险边界 |
 | [docs/progress.md](docs/progress.md) | **做到哪了**：当前状态、已完成、核心结论、踩过的坑、未来计划、未验证缺口 |
+| [docs/verification-checklist.md](docs/verification-checklist.md) | **发版前必须跑完**：装得上、17 个工具逐个冒烟、skill 路由 |
 | [docs/marketplace-listing.md](docs/marketplace-listing.md) | **怎么进生态**：收录机制、三个核心站点的逐项要求、已知坑、提交清单 |
-| [docs/tools/battery-health.md](docs/tools/battery-health.md) | 电池工具组的能力矩阵、数据口径、趋势图设计原则、推荐策略 |
-| [docs/tools/windows-device.md](docs/tools/windows-device.md) | Windows 非电池工具、隐私与确认边界、迁移状态 |
+| [docs/tools/](docs/tools/README.md) | **每个能力域一份**：工具清单、数据口径、隐私边界、判读纪律；索引页含共同契约与迁移来源 |
 | [AGENTS.md](AGENTS.md) | **给 AI agent 的说明**：硬性约束、单一事实来源、代码约定、高频陷阱 |
 | [handoff.md](handoff.md) | **交接文档**：冷启动接手所需的一切 |
 
@@ -182,14 +197,24 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 
 ## 已知待办
 
-**未验证的部分，不要在对外材料里跳过：**
+**未验证的部分，不要在对外材料里跳过。** 下面是摘要；
+逐项依据与优先级以 **[docs/progress.md 第六章](docs/progress.md#六未验证与已知缺口)** 为准，
+冲突时以那份为准。尤其**不要把「原 MCP 已验证」表述成「DSH 插件已验证」**。
 
-- Windows 采集脚本已实现但**从未在真实 Windows 上运行过**
-- `dsh plugin add` 的实际安装**未实测**（目录站 CI 只校验 manifest 形状，不安装不执行）
-- Cordis 工具注册按官方文档写就，**未在真实 DSH 运行时验证过**
-- 无埋点，转化数据完全空白
-- 品牌归属未定论
-- 拯救者电池商品 ID 待核对（需求方给的链接显示文本与 href 不一致）
+| 项 | 状态 |
+|---|---|
+| 电池工具 · macOS | ✅ 实机验证 |
+| 电池工具 · Windows | ⏳ **部分**。已在真实 PowerShell 5.1 上修过编码、数组语法与 Python 执行别名问题（`a66d386`），说明跑过；但完整流程未系统性验证。重点仍需核对 `powercfg /batteryreport /xml` 里 `HistoryEntry` 的容量字段层级 |
+| 非电池工具（device / wifi / actions） | ⏳ 原 Device MCP 已在 Windows 11 验证过，**本仓库的 DSH Cordis 注册壳未验证** |
+| Cordis 工具注册 | ⏳ **部分**。电池版本在 DSH Desktop 上暴露过 schema 编译器问题并已修复（`87ee6c5`），17 工具版本未重新验证 |
+| `dsh plugin add` 安装 | ⏳ **部分**。只在电池版本上实测过；17 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
+| 转化数据 | ❌ 无埋点 |
+| 品牌归属 | ❌ 未定论 |
+| 拯救者电池商品 ID | ❌ 待核对（需求方给的链接显示文本 `1045746` 与 href `1045747` 不一致） |
+
+⚠️ **npm 上的包落后于本仓库**：`dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布）只含电池工具组，
+而本仓库自 2026-09-03 起已有 17 个工具（2026-09-07 重构为 7 个能力域）。用 npm 包名安装拿到的是旧版，
+用 `github:` 源码规格安装拿到的才是当前代码。
 
 完整清单与优先级见 [docs/progress.md](docs/progress.md)。
 

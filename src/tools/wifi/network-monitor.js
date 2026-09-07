@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import net from "node:net";
-import { wifiGetStatus } from "../device/collector.js";
+import { wifiGetStatus } from "./collector.js";
 import { PowerShellError, runPowerShellJson } from "../../shared/powershell.js";
 import { failure, success } from "../../shared/result.js";
 function asObjects(value) {

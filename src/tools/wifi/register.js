@@ -1,7 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 import { envelopeOutput, imageEnvelopeOutput } from '../../shared/tool-output.js'
-import { wifiDiagnose, wifiGetStatus } from '../device/collector.js'
+import { wifiDiagnose, wifiGetStatus } from './collector.js'
 import { generateWifiHtmlReport } from './html-report.js'
 import { networkMonitor } from './network-monitor.js'
 import { generateWifiHealthReport } from './report.js'

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { wifiDiagnoseFromStatus, wifiGetStatus } from "../device/collector.js";
+import { wifiDiagnoseFromStatus, wifiGetStatus } from "./collector.js";
 import { networkMonitorFromStatus } from "./network-monitor.js";
 import { failure, success } from "../../shared/result.js";
 import { PKG_ROOT } from "../../shared/paths.js";
