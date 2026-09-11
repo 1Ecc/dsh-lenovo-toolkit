@@ -3,8 +3,10 @@
 跨平台（macOS / Windows）的笔记本电池体检。面向联想服务团队的一线咨询场景：
 输入是一句「帮我看看电池」，输出是一份服务顾问能照着讲、终端用户能看懂并且愿意相信的诊断报告。
 
-对应的 DSH 工具：`battery_health_collect` · `battery_health_trend` · `battery_health_rules` ·
-`battery_warranty_lookup` · `battery_part_price_lookup` · `battery_service_stores` · `battery_service_handoff`
+对应的 DSH 工具（10 个）：
+`battery_health_collect` · `battery_health_trend` · `battery_health_rules` ·
+`battery_warranty_lookup` · `battery_part_price_lookup` · `battery_service_stores` · `battery_service_handoff` ·
+`battery_appointment_start` · `battery_appointment_options` · `battery_appointment_submit`
 对应的 skill：`.dsh/skills/battery-health-check/`
 
 ## 目录
@@ -26,7 +28,7 @@
 | 产物 | 形式 | 说明 |
 |---|---|---|
 | **诊断报告** | Markdown（对话正文） | 健康概览 → 解读 → 小建议 |
-| **容量衰减趋势图** | SVG，浏览器可直接打开 | 自适应明暗主题，实测与推算可视区分 |
+| **容量衰减趋势图** | SVG，**在对话里内联渲染**（同时落盘存档） | 自适应明暗主题，实测与推算可视区分。放在「一、电池健康概览」表格下方，不要只丢路径 |
 | **官方完整电池报告** | Windows 为 HTML，macOS 为 TXT | 系统原生数据，可存档、可发给服务网点 |
 | **服务推荐** | Markdown 独立小节 | **有触发条件，不满足时整节省略**；触发后查保修、报备件价、找门店，并可预约更换或转人工 |
 
@@ -34,7 +36,8 @@
 
 ```
 结论（一句话，含档位）
-一、电池健康概览   —— 电脑型号 / 电池型号 / 设计容量 / 当前充满容量 / 当前健康度 / 循环次数
+一、电池健康概览   —— 电脑型号 / 主机编号 / 电池型号 / 设计容量 / 当前充满容量 / 当前健康度 / 循环次数
+                     ＋ 内联渲染的容量衰减趋势图
 二、解读           —— 健康度 / 循环次数 / 衰减趋势，讲因果不复述数字
 三、小建议         —— 使用建议 / 置换建议（技术判断，不放商品链接）
 四、附件           —— 趋势图 + 官方报告路径
@@ -82,6 +85,30 @@
 - 差 ≥ 3 个百分点时**必须主动解释**，不解释客户会觉得在糊弄
 
 完整规则见 [`interpretation.md`](../../.dsh/skills/battery-health-check/references/interpretation.md)。
+
+### 机型代码 ≠ MTM（实测推翻的旧假设）
+
+原先假设 `Win32_ComputerSystemProduct.Name` 就是完整 MTM。**在消费线上不成立**：
+
+| | ThinkPad | 消费线（Yoga / 小新 / 拯救者） |
+|---|---|---|
+| `csp.Name` | `21HMA00WCD`（完整 MTM，10 位） | `82TL`（**只有 4 位机型代码**） |
+| 完整 MTM | 本地就有 | **本地任何 WMI 类都取不到**，要拿主机编号联网换 |
+
+实测机 Yoga Pro 14s ARH7：`Name`/`Model`/`SystemSKUNumber`/`Win32_BaseBoard` 全试过，
+都只到 `82TL`，而它的完整 MTM 是 `82TL007KCD`——只有 `machine/getmachineinfo` 接口给得出。
+
+所以采集只输出能确定的部分，`device_mtm` 宁可留空也不拿机型代码顶替：
+
+| 字段 | 本例 |
+|---|---|
+| `device_machine_type` | `82TL` |
+| `device_mtm` | 空（查过保修后从 `machine.mtm` 补） |
+| `device_serial` | `PS00CC2J` ← **整条服务链路的主键，比 MTM 关键** |
+| `device_bios_version` | `JVCN40WW` |
+
+`device_serial` 会过滤 `Default string` / `To be filled by O.E.M.` 这类 SMBIOS 占位符——
+它们看着像数据，发到联想接口只会查无此机。`test/tools/battery.test.js` 有守卫钉住这条。
 
 ### 结论四档
 
@@ -150,11 +177,30 @@ OR  B 意图触发（用户问换电池/续航/保修，可跨轮生效）      
 | ① 查保修 | `battery_warranty_lookup` | `newsupport.lenovo.com.cn/api/drive/<SN>/drivewarrantyinfo` + `/machine/getmachineinfo` | 单独判定**电池**是否在保：延保条款常写明「不包含电池」；判不了给 `null` |
 | ② 查备件价 | `battery_part_price_lookup` | `/api/SmartFault/getSmartFaultPrice?machineNo=<SN>` | 返回原厂标准备件价（不含工时）；「膨胀金」是维修定金，分开讲 |
 | ③ 找门店 | `battery_service_stores` | `/api/station/list`（按距离排序）+ IP 定位 | 定位到的城市要让用户确认；境外出口 IP 直接问用户 |
-| ④a 预约 | 浏览器流程 + `open_url` | `serviceorder.lenovo.com.cn`（**需用户自己登录联想 ID**） | 服务类别=维修服务 · 故障类型=其他 · 故障描述=工具生成 · 时段列给用户选 · 联系人/手机号向用户要 · 复述后提交 · 反馈工单号 |
+| ④a 预约 | `battery_appointment_start` / `_options` / `_submit` | `csrecommend` + `servicesmall`（**需用户自己登录联想 ID**） | 服务类别=维修服务 · 故障类型=其他 · 故障描述=工具生成（≤100 字） · 时段列给用户选 · 联系人/手机号向用户要 · 复述后提交 · 反馈工单号 |
 | ④b 转人工 | `battery_service_handoff` | **mock** | 返回回执（工单号/排队/预计等待），对用户按已转接呈现；返回体 `mock: true` |
 
 ①② 会把主机编号发到联想，工具要求 `confirmed=true`，模型必须先告知用户。
-预约提交需要登录态，没有浏览器自动化能力时不要假装提交——把每项取值列给用户自己填。
+
+### 预约的登录态怎么拿
+
+用户在浏览器里自己登录 → 取 `cerpreg-passport` cookie → 工具换两个 token：
+
+```
+POST csrecommend/api/shop/login/check {cookie}      → data.key      用户 token
+POST csrecommend/api/oauth/token {app_id,secret}    → access_token  页面 token（公开值，非用户凭据）
+
+appoint/machine/*  →  Authorization:  <用户 token>     单数
+repair/*           →  Authorizations: <用户 token>  +  Authenticates: <页面 token>   复数
+```
+
+单复数写错的症状是返回 3001/3002/3004——看着像 token 过期，其实是头名字不对。
+
+**cookie 和 token 都不进模型上下文**：cookie 只用于换 token，token 存在工具进程内的会话表里，
+对外只给一个 30 分钟过期的 `session_id`。提交成功后会话立即丢弃。
+
+三条硬边界写在 skill 里：不代用户登录、不读浏览器 cookie 库、拿不到 cookie 就退回引导用户自己提交。
+提交是不可撤回动作，`battery_appointment_submit` 有 `confirmed` 闸门。
 
 完整接口字段、状态码和兜底见
 [`service-flow.md`](../../.dsh/skills/battery-health-check/references/service-flow.md)。

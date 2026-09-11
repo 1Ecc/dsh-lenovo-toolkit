@@ -3,7 +3,7 @@
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**联想专业工具集**。
 把联想服务体系里的专业判断能力——硬件诊断、备件、保修、服务网点——做成通用 agent 平台上可安装的插件。
 
-当前状态：**试点阶段**。共 **7 个能力域 / 21 个 DSH 工具 / 9 个 skill**——电池跨 macOS 与 Windows，其余六个能力域（设备、性能、存储、应用、Wi-Fi、受控操作）仅支持 Windows，**等待真实 DSH 运行时验证**。
+当前状态：**试点阶段**。共 **7 个能力域 / 24 个 DSH 工具 / 9 个 skill**——电池跨 macOS 与 Windows，其余六个能力域（设备、性能、存储、应用、Wi-Fi、受控操作）仅支持 Windows，**等待真实 DSH 运行时验证**。
 
 > **归属说明（待确认）**
 > 本仓库由联想服务团队成员维护，属于**试点性质的探索项目**，不代表联想官方发布，
@@ -48,17 +48,25 @@
 
 ### 🔋 电池健康检测
 
-跨平台电池体检：容量、循环次数、双口径健康度、SVG 衰减趋势图、系统官方电池报告，
-以及基于结论触发的服务推荐。
+跨平台电池体检：容量、循环次数、双口径健康度、内联渲染的 SVG 衰减趋势图、系统官方电池报告，
+以及基于结论触发的**服务与预约链路**。
 
 | 工具 | 作用 |
 |---|---|
 | `battery_health_collect` | 采集并解析出结构化 metrics，生成官方报告与历史快照 |
-| `battery_health_trend` | 渲染容量衰减趋势 SVG |
+| `battery_health_trend` | 渲染容量衰减趋势 SVG，直接返回图片供内联展示 |
 | `battery_health_rules` | 取判读规则文档，避免模型凭印象下结论 |
+| `battery_warranty_lookup` | 查官方保修，**单独判定电池是否在保**（延保常写明不含电池） |
+| `battery_part_price_lookup` | 查原厂电池备件价与维修抵扣券 |
+| `battery_service_stores` | 找最近的联想服务门店，并生成预约用的故障描述 |
+| `battery_appointment_start` / `_options` / `_submit` | 用用户自己登录后的 cookie 换凭据，选门店时段并提交预约单 |
+| `battery_service_handoff` | 转人工（当前为 mock） |
 
-第三个工具的存在是为了让**只装了 Plugin 没装 Skill 的用户也能拿到判读标准**，
+`battery_health_rules` 的存在是为了让**只装了 Plugin 没装 Skill 的用户也能拿到判读标准**，
 否则模型会拿着一堆数字自由发挥，而判读规则正是这个项目最不该被绕过的部分。
+
+服务链路的纪律：**先出结论，再看结论是否触发推荐**；查保修/备件价要先告知用户会把主机编号
+发给联想；预约提交是不可撤回动作，必须复述整单并取得确认；**绝不代用户登录、不读浏览器 cookie 库**。
 
 详见 **[docs/tools/battery.md](docs/tools/battery.md)**。
 
@@ -187,7 +195,7 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 |---|---|
 | [docs/vision.md](docs/vision.md) | **为什么做**：判断、要验证的假设、指标、工具规划、设计原则、风险边界 |
 | [docs/progress.md](docs/progress.md) | **做到哪了**：当前状态、已完成、核心结论、踩过的坑、未来计划、未验证缺口 |
-| [docs/verification-checklist.md](docs/verification-checklist.md) | **发版前必须跑完**：装得上、17 个工具逐个冒烟、skill 路由 |
+| [docs/verification-checklist.md](docs/verification-checklist.md) | **发版前必须跑完**：装得上、24 个工具逐个冒烟、skill 路由 |
 | [docs/marketplace-listing.md](docs/marketplace-listing.md) | **怎么进生态**：收录机制、三个核心站点的逐项要求、已知坑、提交清单 |
 | [docs/tools/](docs/tools/README.md) | **每个能力域一份**：工具清单、数据口径、隐私边界、判读纪律；索引页含共同契约与迁移来源 |
 | [AGENTS.md](AGENTS.md) | **给 AI agent 的说明**：硬性约束、单一事实来源、代码约定、高频陷阱 |
@@ -204,17 +212,18 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 | 项 | 状态 |
 |---|---|
 | 电池工具 · macOS | ✅ 实机验证 |
-| 电池工具 · Windows | ⏳ **部分**。已在真实 PowerShell 5.1 上修过编码、数组语法与 Python 执行别名问题（`a66d386`），说明跑过；但完整流程未系统性验证。重点仍需核对 `powercfg /batteryreport /xml` 里 `HistoryEntry` 的容量字段层级 |
+| 电池工具 · Windows | ✅ 实机验证（2026-09-11，Windows 11 + PowerShell 5.1）。顺带修掉 `-InputFormat None` 采集超时与「机型代码被当成 MTM」两个真问题 |
 | 非电池工具（device / wifi / actions） | ⏳ 原 Device MCP 已在 Windows 11 验证过，**本仓库的 DSH Cordis 注册壳未验证** |
-| Cordis 工具注册 | ⏳ **部分**。电池版本在 DSH Desktop 上暴露过 schema 编译器问题并已修复（`87ee6c5`），21 工具版本未重新验证 |
-| `dsh plugin add` 安装 | ⏳ **部分**。只在电池版本上实测过；21 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
+| Cordis 工具注册 | ⏳ **部分**。电池版本在 DSH Desktop 上暴露过 schema 编译器问题并已修复（`87ee6c5`），24 工具版本未重新验证 |
+| `dsh plugin add` 安装 | ⏳ **部分**。只在电池版本上实测过；24 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
 | 转化数据 | ❌ 无埋点 |
 | 品牌归属 | ❌ 未定论 |
 | 电池服务链路（保修 / 备件价 / 门店） | ✅ 真实 SN 打通（2026-09-11）；接口为联想站内接口，无稳定性承诺 |
-| 电池服务链路（预约提交 / 转人工） | ⏳ 预约需用户登录联想 ID，仅文档化流程；转人工为 **mock** |
+| 电池服务链路（预约提交） | ⏳ 已实现（cookie → token → 选门店时段 → 提交），离线夹具测试覆盖；**但未在真实登录态下实跑过一单** |
+| 电池服务链路（转人工） | ⚠ **mock**，未接坐席系统 |
 
 ⚠️ **npm 上的包落后于本仓库**：`dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布）只含电池工具组，
-而本仓库自 2026-09-03 起已有 17 个工具（2026-09-07 重构为 7 个能力域，2026-09-11 电池组加入服务链路后为 21 个）。用 npm 包名安装拿到的是旧版，
+而本仓库自 2026-09-03 起已有 17 个工具（2026-09-07 重构为 7 个能力域，2026-09-11 电池组加入服务与预约链路后为 24 个）。用 npm 包名安装拿到的是旧版，
 用 `github:` 源码规格安装拿到的才是当前代码。
 
 完整清单与优先级见 [docs/progress.md](docs/progress.md)。

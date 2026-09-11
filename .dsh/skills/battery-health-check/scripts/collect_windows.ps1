@@ -55,6 +55,7 @@ function Get-CimSafe {
 $cs       = Get-CimSafe 'Win32_ComputerSystem'        | Select-Object -First 1
 $csp      = Get-CimSafe 'Win32_ComputerSystemProduct' | Select-Object -First 1
 $bios     = Get-CimSafe 'Win32_BIOS'                  | Select-Object -First 1
+$board    = Get-CimSafe 'Win32_BaseBoard'             | Select-Object -First 1
 $os       = Get-CimSafe 'Win32_OperatingSystem'       | Select-Object -First 1
 $batt     = Get-CimSafe 'Win32_Battery'               | Select-Object -First 1
 $static   = Get-CimSafe 'BatteryStaticData'           -Namespace 'root\WMI' | Select-Object -First 1
@@ -68,6 +69,7 @@ $cimPairs = @(
     @{n='Win32_ComputerSystem';        o=$cs};
     @{n='Win32_ComputerSystemProduct'; o=$csp};
     @{n='Win32_BIOS';                  o=$bios};
+    @{n='Win32_BaseBoard';             o=$board};
     @{n='Win32_Battery';               o=$batt};
     @{n='BatteryStaticData';           o=$static};
     @{n='BatteryFullChargedCapacity';  o=$fullChg};
@@ -143,6 +145,50 @@ if (Test-Path $ReportXml) {
 # ---------- 汇总取值：XML 优先，WMI 兜底 ----------
 function First-Value { foreach ($v in $args) { if ($v -ne $null -and "$v".Trim() -ne '' -and "$v" -ne '0') { return $v } } return $null }
 
+<#
+设备标识的取值。
+
+这里踩过的坑：**`Win32_ComputerSystemProduct.Name` 不一定是完整 MTM。**
+在 ThinkPad 上它常是完整 10 位（`21HMA00WCD`），但在消费线（Yoga / 小新 / 拯救者）上
+只有 4 位机型代码（实测 Yoga Pro 14s ARH7 返回 `82TL`，完整 MTM 其实是 `82TL007KCD`）。
+把 4 位的机型代码当 MTM 报给客户，或拿去查备件/保修，都会对不上。
+
+完整 MTM 在本机任何 WMI 类里都取不到（Name/Model/SystemSKUNumber/BaseBoard 全试过），
+**只能靠主机编号去联想在线接口换**（battery_warranty_lookup 返回的 machine.mtm）。
+所以这里只输出能确定的东西：
+  device_machine_type  4 位机型代码，一定有
+  device_mtm           完整 MTM，本地取不到时留空——留空比填一个半截的值安全
+#>
+function Clean-Id {
+    param([string]$v)
+    if ([string]::IsNullOrWhiteSpace($v)) { return '' }
+    $t = $v.Trim()
+    # OEM 没把值烧进 SMBIOS 时 BIOS 会返回这些占位符。它们看起来像数据，其实不是，
+    # 一旦当成主机编号发到联想接口就会查无此机，还会让用户以为是自己抄错了。
+    if ($t -match '^(Default string|To be filled by O\.E\.M\.|System Serial Number|Serial Number|Not Applicable|Not Specified|None|N/A|Unknown|0+|\.+)$') { return '' }
+    return $t
+}
+
+$deviceSerial = First-Value (Clean-Id $bios.SerialNumber) (Clean-Id $csp.IdentifyingNumber) (Clean-Id $board.SerialNumber)
+if (-not $deviceSerial) { $deviceSerial = '' }
+
+$cspName = Clean-Id $csp.Name
+$machineType = ''
+$mtm = ''
+if ($cspName -match '^[0-9A-Za-z]{7,}$') {
+    # 完整 MTM：前 4 位就是机型代码
+    $mtm = $cspName
+    $machineType = $cspName.Substring(0, 4)
+} elseif ($cspName -match '^[0-9A-Za-z]{4}$') {
+    $machineType = $cspName
+}
+if (-not $machineType) {
+    $m = Clean-Id $cs.Model
+    if ($m -match '^[0-9A-Za-z]{4}$') { $machineType = $m }
+}
+# SystemSKUNumber 形如 LENOVO_MT_82TL_BU_idea_FM_Yoga Pro 14s ARH7，兜底能再刨出机型代码
+if (-not $machineType -and "$($cs.SystemSKUNumber)" -match '_MT_([0-9A-Za-z]+)') { $machineType = $Matches[1] }
+
 $designCap = First-Value $xmlDesign $static.DesignedCapacity $batt.DesignVoltage
 if ($static -and $static.DesignedCapacity) { $designCap = First-Value $xmlDesign $static.DesignedCapacity }
 $fullCap   = First-Value $xmlFull $fullChg.FullChargedCapacity
@@ -183,10 +229,15 @@ $lines = @(
     "capacity_unit=mWh"
     "os_version=$($os.Caption) $($os.Version) (Build $($os.BuildNumber))"
     "device_vendor=$($cs.Manufacturer)"
-    "device_model=$($csp.Version)"
+    "device_model=$(First-Value $csp.Version $cs.SystemFamily)"
     "device_model_identifier=$($cs.Model)"
     "device_model_number=$($csp.Name)"
-    "device_serial=$($bios.SerialNumber)"
+    "device_machine_type=$machineType"
+    "device_mtm=$mtm"
+    "device_sku=$($cs.SystemSKUNumber)"
+    "device_board_product=$($board.Product)"
+    "device_bios_version=$($bios.SMBIOSBIOSVersion)"
+    "device_serial=$deviceSerial"
     "device_chip=$((Get-CimSafe 'Win32_Processor' | Select-Object -First 1).Name)"
     "battery_model=$battModel"
     "battery_serial=$battSerial"

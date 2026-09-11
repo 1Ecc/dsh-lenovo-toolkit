@@ -57,6 +57,11 @@ python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out
 这时它会画成**推算区间**而不是一条看着很确定的线。报告里的措辞要和图一致：
 图上写的是区间，正文就不能只报一个确定数字。
 
+**这张图要在对话里直接渲染出来，放在「一、电池健康概览」的表格正下方**，不要只丢一个
+文件路径让用户自己去开——他多半不会开，那这张图就白画了。`battery_health_trend` 会把 SVG
+内容直接当图片返回；如果宿主有文件渲染能力（比如 `SendUserFile` 的 `display: render`），
+也用上。文件仍然照写，存档和发给服务网点时还用得上，路径放到「四、附件」里。
+
 如果环境里没有 `python3`，跳过这一步并在报告里说明趋势图未生成，其余部分照常输出。
 不要为了补这张图去手写 SVG——手写的图和脚本的口径对不上，反而制造矛盾。
 
@@ -85,11 +90,14 @@ python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out
 | 项目 | 数值 |
 |---|---|
 | 电脑型号 | |
+| 主机编号 | |
 | 电池型号 | |
 | 设计容量 | |
 | 当前充满容量 | |
 | 当前健康度 | |
 | 循环次数 | |
+
+<在这里内联渲染容量衰减趋势图，并用一句话说明图上画的是实测还是推算>
 
 ## 二、解读
 
@@ -115,6 +123,10 @@ python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out
 
 - **概览表如实填写。** 字段取不到就写「系统未提供」，不要留空，也不要拿别的数字顶上。
   两种健康度口径不一致时，主表填系统口径，并在括号里补一句电量计实测值。
+- **机型那一栏别把机型代码写成 MTM。** 消费线（Yoga / 小新 / 拯救者）的 WMI 只给得出 4 位
+  机型代码（如 `82TL`），完整 MTM（如 `82TL007KCD`）本地取不到。`device_mtm` 为空时就写
+  机型代码并注明完整 MTM 需联网查；查过保修之后（`battery_warranty_lookup` 的 `machine.mtm`）
+  再把完整 MTM 补上。**主机编号（`device_serial`）才是后续所有服务动作的主键，必须列出来。**
 - **解读要给因果，不要复述数字。** "循环 75 次，健康度 88%"是概览已经说过的话；
   解读要回答的是"这个组合意味着什么、正常吗、接下来会怎样"。
 - **不确定就说不确定。** 循环次数很少、只有单个实测点、两种口径分歧大——
@@ -142,9 +154,12 @@ python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out
 4. 把以上三项写进报告最后的「服务推荐」节（格式见 `lenovo-offers.md`），然后给用户两条路：
    - **预约到店/上门**：需要用户自己登录联想 ID——用 `open_url` 拉起
      `https://serviceorder.lenovo.com.cn/h5/#/serviceOrderPC/selectService`，等用户说登好了，
-     再按 `references/service-flow.md` 第 4 节填单：服务类别=维修服务、故障类型=其他、
-     故障描述用工具生成的 `fault_description`、门店选最近的、**可选时段列给用户挑、联系人和手机号
-     向用户要**、复述整单确认后提交，最后把工单号反馈给用户；
+     取 `cerpreg-passport` cookie，然后 `battery_appointment_start` →
+     `battery_appointment_options` → `battery_appointment_submit`。
+     服务类别=维修服务、故障类型=其他、故障描述用 `fault_description`（≤100 字）、
+     **可选时段列给用户挑、联系人和手机号向用户要**、复述整单确认后才提交，最后反馈工单号。
+     **绝不代用户登录，绝不读浏览器 cookie 库**；拿不到 cookie 就退回引导用户自己提交。
+     详见 `references/service-flow.md` 第 4 节。
    - **转人工**：调 `battery_service_handoff`，把回执（工单号、排队位置、预计等待）告诉用户。
 
 非联想设备：保修/备件价接口查不到是正常的，不要反复试；门店查询可用但受理与否以门店为准，不推预约。

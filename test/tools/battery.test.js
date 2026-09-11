@@ -65,6 +65,30 @@ test('两种口径一致时不要平白多出一行警示', () => {
   assert.doesNotMatch(s, /个百分点/)
 })
 
+/**
+ * 消费线的 WMI 只给得出 4 位机型代码（实测 Yoga Pro 14s ARH7 是 82TL，完整 MTM 其实是
+ * 82TL007KCD）。把机型代码当 MTM 报给客户、或拿去查备件，都会对不上。
+ */
+test('只有 4 位机型代码时不许冒充 MTM，要写明需联网查', () => {
+  const s = summarize({
+    device_vendor: 'LENOVO',
+    device_model: 'Yoga Pro 14s ARH7',
+    device_machine_type: '82TL',
+    device_mtm: '',
+    device_serial: 'PS00CC2J',
+  })
+  assert.match(s, /机型代码 82TL/)
+  assert.match(s, /联网查/)
+  assert.doesNotMatch(s, /MTM 82TL(?!0)/, '4 位机型代码不能被标成 MTM')
+  assert.match(s, /主机编号：PS00CC2J/, '主机编号是整条服务链路的主键，摘要里必须有')
+})
+
+test('拿到完整 MTM 时照常标成 MTM', () => {
+  const s = summarize({ device_model: 'ThinkPad X1', device_machine_type: '21HM', device_mtm: '21HMA00WCD' })
+  assert.match(s, /MTM 21HMA00WCD/)
+  assert.doesNotMatch(s, /联网查/)
+})
+
 test('readRules 能取到四份规则文档，未知名字要报错而不是返回空', () => {
   assert.match(readRules('interpretation'), /健康度分级/)
   assert.match(readRules('platform'), /macOS/)
@@ -122,6 +146,15 @@ test('collect 集成测试：真实采集并解析出关键字段', { skip: plat
     const content = readFileSync(svg, 'utf8')
     assert.match(content, /^<svg /, 'SVG 应以 <svg 开头')
     assert.match(content, /80% 建议更换线/, '应画出 80% 更换线')
+    // 趋势图要能在对话里内联渲染，所以内容必须跟着返回，不能只给路径
+    assert.equal(trend.svg, content, 'renderTrend 必须把 SVG 内容一并返回')
+
+    // Windows 上应当同时拿到主机编号和机型代码——服务链路全靠主机编号
+    if (platform === 'windows') {
+      assert.ok(m.device_serial, 'Windows 上应采到主机编号')
+      assert.doesNotMatch(m.device_serial, /Default string|To be filled/i, 'SMBIOS 占位符必须被过滤掉')
+      assert.ok(m.device_machine_type, 'Windows 上应采到机型代码')
+    }
   } finally {
     rmSync(out, { recursive: true, force: true })
   }

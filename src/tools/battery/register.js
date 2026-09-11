@@ -8,16 +8,26 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 import { toText } from '../../shared/errors.js'
-import { envelopeOutput } from '../../shared/tool-output.js'
+import { envelopeOutput, imageEnvelopeOutput } from '../../shared/tool-output.js'
 import { failure, success } from '../../shared/result.js'
 import { collect, detectPlatform, historyFile, readRules, renderTrend, summarize } from './collector.js'
 import {
   buildFaultDescription,
+  createAppointmentSession,
+  dropSession,
   findNearestStores,
+  getRepairService,
+  getSession,
+  getSubmitSignature,
+  listAppointmentDevices,
+  listAppointmentSlots,
+  listAppointmentStores,
   locateByIp,
   lookupBatteryPrice,
   lookupWarranty,
   mockHumanHandoff,
+  putSession,
+  submitAppointment,
 } from './lenovo-service.js'
 
 export const group = 'battery'
@@ -92,8 +102,9 @@ export function register(ctx) {
     defineTool({
       name: 'battery_health_trend',
       description:
-        '渲染容量衰减趋势图（SVG，浏览器可直接打开）。历史点足够时用日期轴画真实曲线，' +
-        '否则用循环次数轴并叠加厂商规格参考线。单个实测点时画成推算区间而非确定的单一预测值。' +
+        '渲染容量衰减趋势图并**直接返回 SVG 图片**，用于在报告的「一、电池健康概览」里内联展示，' +
+        '不要只把路径丢给用户。历史点足够时用日期轴画真实曲线，否则用循环次数轴并叠加厂商规格参考线；' +
+        '单个实测点时画成推算区间而非确定的单一预测值。' +
         '需要先调用 battery_health_collect 拿到 metricsPath。依赖 python3（仅标准库）。',
       parameters: {
         metricsPath: {
@@ -106,15 +117,17 @@ export function register(ctx) {
           description: '输出 SVG 路径。不传则与 metrics.env 同目录，命名为 battery-trend.svg。',
         },
       },
-      output: {
-        schema: { type: 'object', additionalProperties: true },
-        render: (_args, v) => [{ type: 'text', text: `趋势图已生成：${v.path}` }],
-      },
+      output: imageEnvelopeOutput('image/svg+xml', 'svg'),
       async execute(args) {
         try {
-          return await renderTrend({ metricsPath: args.metricsPath, outPath: args.outPath })
+          const r = await renderTrend({ metricsPath: args.metricsPath, outPath: args.outPath })
+          return { envelope: success({ path: r.path, bytes: r.svg.length }), svg: r.svg }
         } catch (err) {
-          throw new Error(toText(err))
+          // 没装 Python 只是趋势图缺席，不该让整次检测失败——所以返回 envelope 而不是抛
+          return {
+            envelope: failure('error', (err?.code || 'render_failed').toLowerCase(), toText(err)),
+            svg: null,
+          }
         }
       },
     }),
@@ -272,6 +285,181 @@ export function register(ctx) {
       output: envelopeOutput,
       async execute(args) {
         return success(mockHumanHandoff({ sn: args.sn, summary: args.summary, reason: args.reason }))
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'battery_appointment_start',
+      description:
+        '用用户浏览器里的 cerpreg-passport cookie 建立预约会话，返回 sessionId、账号下已绑定的设备列表，' +
+        '以及目标 SN 可预约的维修服务类别。cookie 的拿法：用 open_url 打开 ' +
+        'https://serviceorder.lenovo.com.cn/h5/#/serviceOrderPC/selectService 让**用户自己登录**，' +
+        '登录后在该页读 document.cookie 里的 cerpreg-passport；没有浏览器自动化能力就请用户手动复制。' +
+        '**绝不要去读浏览器的 cookie 数据库，也绝不要代用户输入账号密码。** ' +
+        'cookie 只用于换 token，不落盘；token 存在进程内，只通过 sessionId 引用。' +
+        '设备列表里没有目标 SN 时，要让用户先在页面上「绑定设备」。',
+      parameters: {
+        cookie: {
+          type: 'string',
+          required: true,
+          description: 'cerpreg-passport 的值；整条 document.cookie 也可以，会自动挑出需要的那条',
+        },
+        sn: { type: 'string', description: '要预约的主机编号；传了就一并返回该机可预约的服务类别' },
+      },
+      output: envelopeOutput,
+      async execute(args) {
+        try {
+          const session = await createAppointmentSession(args.cookie)
+          const sessionId = putSession(session)
+          const devices = await listAppointmentDevices(session)
+          const data = {
+            session_id: sessionId,
+            lenovoid: session.lenovoid,
+            account_mobile_masked: session.mobile_masked,
+            devices,
+            expires_in_minutes: 30,
+          }
+          const warnings = []
+          if (args.sn) {
+            const sn = String(args.sn).trim().toUpperCase()
+            data.sn_bound = devices.some((d) => String(d.sn || '').toUpperCase() === sn)
+            if (data.sn_bound) {
+              data.service = await getRepairService(session, sn)
+            } else {
+              warnings.push(`账号下没有绑定 ${sn}，需先让用户在预约页「绑定设备」再继续`)
+            }
+          }
+          return success(data, warnings)
+        } catch (err) {
+          return toEnvelopeFailure(err)
+        }
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'battery_appointment_options',
+      description:
+        '取预约要填的可选项：可预约门店（按 city/county 过滤），以及传了 stationCode 时该门店未来几天的可预约时段。' +
+        '标 available=false 的时段是约满或当天不可约。**时段必须原样列给用户挑，不要替用户选。** ' +
+        '需要先调 battery_appointment_start 拿 sessionId。',
+      parameters: {
+        sessionId: { type: 'string', required: true, description: 'battery_appointment_start 返回的 session_id' },
+        sn: { type: 'string', required: true, description: '主机编号' },
+        city: { type: 'string', description: '市，如「北京市」' },
+        county: { type: 'string', description: '区/县' },
+        stationCode: { type: 'string', description: '门店编码；传了才返回该门店的可预约时段' },
+      },
+      output: envelopeOutput,
+      async execute(args) {
+        try {
+          const session = getSession(args.sessionId)
+          const stores = await listAppointmentStores(session, {
+            sn: args.sn,
+            city: args.city,
+            county: args.county,
+          })
+          const data = { stores }
+          if (args.stationCode) {
+            data.station_code = args.stationCode
+            data.days = await listAppointmentSlots(session, { stationCode: args.stationCode })
+          }
+          return success(data, stores.length ? [] : ['该区域没有可接预约的网点，换个区县或改用上门服务'])
+        } catch (err) {
+          return toEnvelopeFailure(err)
+        }
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'battery_appointment_submit',
+      description:
+        '提交联想服务预约单（到店或上门）。**这是不可撤回的对外动作**：调用前必须把整单（门店、时段、' +
+        '联系人、手机号、故障描述）向用户复述一遍并得到明确同意，然后才能传 confirmed=true。' +
+        '故障描述用 battery_service_stores 生成的 fault_description（上限 100 字）。' +
+        '提交成功后把工单号反馈给用户；返回 already_booked 表示该设备已有预约单，不要重试。',
+      parameters: {
+        sessionId: { type: 'string', required: true, description: 'battery_appointment_start 返回的 session_id' },
+        sn: { type: 'string', required: true, description: '主机编号' },
+        desc: { type: 'string', required: true, description: '故障描述，≤100 字' },
+        name: { type: 'string', required: true, description: '联系人昵称（向用户索取，不要编）' },
+        phone: { type: 'string', required: true, description: '11 位手机号（向用户索取）' },
+        repairTime: { type: 'string', required: true, description: '预约时间，格式 YYYY-M-D HH:00' },
+        mode: { type: 'string', description: 'store 到店（默认）/ door 上门' },
+        stationCode: { type: 'string', description: '到店必填：门店编码' },
+        appointmentDate: { type: 'string', description: '到店：YYYY-M-D' },
+        timeBucket: { type: 'string', description: '到店：所选时段，如 10:00-11:00' },
+        address: { type: 'string', description: '上门必填：详细地址' },
+        province: { type: 'string', description: '上门：省' },
+        city: { type: 'string', description: '上门：市' },
+        county: { type: 'string', description: '上门：区/县' },
+        confirmed: { type: 'boolean', required: true, description: '用户对这一单明确说了提交之后才可为 true' },
+      },
+      output: envelopeOutput,
+      async execute(args) {
+        if (!args.confirmed) {
+          return failure(
+            'permission_denied',
+            'confirmation_required',
+            '提交预约是不可撤回的操作。请先把门店、时段、联系人、手机号、故障描述复述给用户确认，再以 confirmed=true 重试。',
+          )
+        }
+        try {
+          const session = getSession(args.sessionId)
+          const service = await getRepairService(session, args.sn)
+          const device = (await listAppointmentDevices(session)).find(
+            (d) => String(d.sn || '').toUpperCase() === String(args.sn).toUpperCase(),
+          )
+          if (!device) {
+            return failure('error', 'device_not_bound', `账号下没有绑定 ${args.sn}，请先在预约页绑定设备`)
+          }
+          const smallClassId = service.children?.[0]?.id
+          const signature = await getSubmitSignature(session, {
+            sn: args.sn,
+            bigClassId: service.big_class_id,
+            smallClassId: service.category_type === 2 ? smallClassId : undefined,
+          })
+          const store =
+            args.mode === 'door'
+              ? null
+              : (await listAppointmentStores(session, { sn: args.sn, city: args.city, county: args.county })).find(
+                  (s) => String(s.code) === String(args.stationCode),
+                )
+          const r = await submitAppointment(session, {
+            sn: args.sn,
+            materialNo: device.material_no,
+            desc: args.desc,
+            signature,
+            bigClassId: service.big_class_id,
+            bigClass: service.big_class,
+            smallClassId: service.category_type === 2 ? smallClassId : '',
+            smallClass: service.category_type === 2 ? service.children?.[0]?.name : '',
+            categoryType: service.category_type,
+            mode: args.mode === 'door' ? 'door' : 'store',
+            stationCode: args.stationCode,
+            lat: store?.lat,
+            lng: store?.lng,
+            repairTime: args.repairTime,
+            appointmentDate: args.appointmentDate,
+            timeBucket: args.timeBucket,
+            province: args.province,
+            city: args.city,
+            county: args.county,
+            address: args.address,
+            name: args.name,
+            phone: args.phone,
+          })
+          // 单已经提交了，登录凭据就没有留着的理由了
+          dropSession(args.sessionId)
+          return success({ ...r, store: store ? { code: store.code, name: store.name, address: store.address } : null })
+        } catch (err) {
+          return toEnvelopeFailure(err)
+        }
       },
     }),
   )

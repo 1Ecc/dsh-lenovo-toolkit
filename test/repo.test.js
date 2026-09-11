@@ -185,7 +185,7 @@ test('每个能力域都要带齐 collector / register / 文档 / 测试，并�
  * 这里不写死总数会更"灵活"，但也就守不住"迁移时漏掉一个工具"这类问题——
  * 所以刻意写死，改动工具数时必须同步改这里，逼人确认这是有意为之。
  */
-test('全仓库共注册 21 个工具，名字不得重复', () => {
+test('全仓库共注册 24 个工具，名字不得重复', () => {
   const toolsRoot = join(ROOT, 'src', 'tools')
   const source = walk(toolsRoot)
     .filter((p) => p.endsWith('register.js'))
@@ -193,7 +193,7 @@ test('全仓库共注册 21 个工具，名字不得重复', () => {
     .join('\n')
 
   const names = [...source.matchAll(/name:\s*'([^']+)'/g)].map((m) => m[1])
-  assert.equal(names.length, 21, '工具总数变了；确认是有意的再改这个数字')
+  assert.equal(names.length, 24, '工具总数变了；确认是有意的再改这个数字')
   assert.equal(new Set(names).size, names.length, '有重名工具，后注册的会覆盖先注册的')
 })
 

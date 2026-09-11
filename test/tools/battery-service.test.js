@@ -12,12 +12,18 @@ import assert from 'node:assert/strict'
 import { ToolkitError } from '../../src/shared/errors.js'
 import {
   buildFaultDescription,
+  createAppointmentSession,
+  dropSession,
   findNearestStores,
+  getSession,
+  listAppointmentSlots,
   locateByIp,
   lookupBatteryPrice,
   lookupWarranty,
   mockHumanHandoff,
   normalizeSn,
+  putSession,
+  submitAppointment,
 } from '../../src/tools/battery/lenovo-service.js'
 
 const json = (body, status = 200) => ({
@@ -152,12 +158,19 @@ const PRICE = {
   },
 }
 
-test('备件价：只取电池项，膨胀金作为定金单独返回，不和备件价混在一起', async () => {
+test('备件价：只取电池项，膨胀金作为抵扣券单独返回，不和备件价混在一起', async () => {
   const r = await lookupBatteryPrice('PS00CC2J', { fetch: fetchFor([['getSmartFaultPrice', PRICE]]) })
   assert.equal(r.available, true)
   assert.equal(r.standard_price_cny, 399)
-  assert.equal(r.repair_deposit.price_cny, 80)
   assert.equal(r.parts_listed, 2)
+
+  // 膨胀金是「可优惠额度」而不是附加费用；倍数不在接口里，所以不能在代码里写死
+  assert.equal(r.repair_credit.pay_cny, 80)
+  assert.equal(r.repair_credit.kind, 'deduction_voucher')
+  assert.match(r.repair_credit.note, /抵扣券|优惠/)
+  assert.match(r.repair_credit.note, /核实/)
+  assert.equal(r.repair_credit.deduction_cny, undefined, '抵扣额不在接口里，不许臆造')
+  assert.equal(r.repair_deposit, undefined, '旧的「定金」口径必须彻底消失')
 })
 
 test('备件价：联想没公示时 available=false 而不是报错', async () => {
@@ -212,26 +225,41 @@ test('IP 定位：境外出口或失败都返回 null，让上层改问用户', 
   assert.equal(await locateByIp({ fetch: dead }), null)
 })
 
-test('故障描述：确定性拼接，含结论与数字，不超过表单长度', () => {
+test('故障描述：确定性拼接，含结论与数字，且必须塞得进 100 字的表单', () => {
   const d = buildFaultDescription({
     conclusion: '建议更换电池',
-    deviceModel: 'Yoga Pro 14s ARH7',
-    designMah: '4890',
-    fullMah: '3700',
-    healthPct: '75',
-    cycleCount: '412',
-    warrantyNote: '电池按保外处理',
-    batteryPriceCny: 399,
+    batteryModel: 'L21D4PE0',
+    designMah: '70000',
+    fullMah: '60670',
+    healthPct: '86.7',
+    cycleCount: '140',
+    unit: 'mWh',
   })
   assert.match(d, /建议更换电池/)
-  assert.match(d, /健康度 75%/)
-  assert.match(d, /¥399/)
-  assert.ok(d.length <= 300)
+  assert.match(d, /86\.7%/)
+  assert.match(d, /循环140次/)
+  assert.match(d, /mWh/, '单位要跟平台走，Windows 是 mWh 不是 mAh')
+  assert.ok(d.length <= 100, `故障描述 ${d.length} 字，超了联想表单的 100 字上限`)
   assert.equal(
     buildFaultDescription({ conclusion: 'x' }),
     buildFaultDescription({ conclusion: 'x' }),
     '同样输入必须给同样输出',
   )
+})
+
+test('故障描述：装不下的字段整段丢弃，不能截出半句话', () => {
+  const d = buildFaultDescription({
+    conclusion: '需要送修检测'.repeat(12), // 单这一段就 72 字
+    healthPct: '86.7',
+    cycleCount: '140',
+    batteryModel: 'L21D4PE0',
+  })
+  assert.ok(d.length <= 100)
+  // 结论塞进去之后就没地方放电池型号了，那它就该整段不出现，而不是出现半个
+  assert.ok(!/电池型号L?$|电池型号L21D?$/.test(d), `尾部被截断了：${d}`)
+  for (const seg of d.split('，')) {
+    assert.ok(seg.length > 0)
+  }
 })
 
 test('转人工是 mock：返回体必须自报 mock=true，回执字段齐全', () => {
@@ -240,6 +268,152 @@ test('转人工是 mock：返回体必须自报 mock=true，回执字段齐全',
   assert.match(r.ticket_id, /^LNV-\d{8}-\d{4}$/)
   assert.ok(r.queue_position >= 1 && r.eta_minutes >= 2)
   assert.equal(r.summary_forwarded, true)
+})
+
+// --- 预约链路 ---
+
+const APPOINT_OK = [
+  ['shop/login/check', { statusCode: 200, data: { key: 'USER_TOKEN' } }],
+  ['oauth/token', { statusCode: 200, data: { access_token: 'OAUTH_TOKEN' } }],
+  ['user/check-login-status', { statusCode: 200, data: { Lenovoid: 'uid-1', mobile: '13800001111' } }],
+]
+
+test('建立预约会话：从整条 document.cookie 里挑出 passport，并换到两个 token', async () => {
+  const seen = []
+  const fetch = async (url, init) => {
+    seen.push({ url, body: init.body, headers: init.headers })
+    for (const [p, b] of APPOINT_OK) if (url.includes(p)) return json(b)
+    throw new Error(`未预期的 ${url}`)
+  }
+  const s = await createAppointmentSession('leid=x; cerpreg-passport=ABC123DEF; Hm_lvt=9', { fetch })
+  assert.equal(s.token, 'USER_TOKEN')
+  assert.equal(s.oauthToken, 'OAUTH_TOKEN')
+  assert.equal(s.lenovoid, 'uid-1')
+  assert.equal(s.mobile_masked, '138****1111', '手机号对外要打码')
+
+  assert.equal(JSON.parse(seen[0].body).cookie, 'ABC123DEF', '只能把 passport 这一条发出去')
+  // 单复数写错就会被联想当成未授权，这里钉死
+  const who = seen.find((r) => r.url.includes('check-login-status'))
+  assert.equal(who.headers.Authorizations, 'USER_TOKEN')
+  assert.equal(who.headers.Authenticates, 'OAUTH_TOKEN')
+  assert.equal(who.headers.Authorization, undefined)
+})
+
+test('建立预约会话：登录态失效要报 LOGIN_REQUIRED，而不是笼统的失败', async () => {
+  const fetch = fetchFor([['shop/login/check', { statusCode: 2001, message: 'not login' }]])
+  await assert.rejects(
+    () => createAppointmentSession('cerpreg-passport=x', { fetch }),
+    (e) => e instanceof ToolkitError && e.code === 'LOGIN_REQUIRED',
+  )
+  await assert.rejects(
+    () => createAppointmentSession('  ', { fetch }),
+    (e) => e.code === 'LOGIN_REQUIRED',
+  )
+})
+
+test('会话句柄：token 不进模型上下文，过期后明确报错', () => {
+  const id = putSession({ token: 'T', oauthToken: 'O', lenovoid: 'u' })
+  assert.match(id, /^bs_/)
+  assert.equal(getSession(id).token, 'T')
+
+  assert.throws(() => getSession('bs_nope'), (e) => e.code === 'SESSION_EXPIRED')
+  assert.equal(dropSession(id), true)
+  assert.throws(() => getSession(id), (e) => e.code === 'SESSION_EXPIRED')
+})
+
+test('可预约时段：当天一律不可选，约满的也不可选', async () => {
+  const fetch = fetchFor([
+    [
+      'repair/appointment/nearly',
+      {
+        statusCode: 200,
+        data: [
+          { year: 2026, month: '09', day: '11', week: '星期五', time_date: [{ time: '10:00-11:00', free: 5 }] },
+          {
+            year: 2026, month: '09', day: '12', week: '星期六',
+            time_date: [{ time: '10:00-11:00', free: 3 }, { time: '11:00-12:00', free: 0 }],
+          },
+        ],
+      },
+    ],
+  ])
+  const days = await listAppointmentSlots({ token: 'T', oauthToken: 'O', lenovoid: 'u' }, { stationCode: '21006256' }, { fetch })
+  assert.equal(days[0].slots[0].available, false, '当天不可预约')
+  assert.equal(days[1].slots[0].available, true)
+  assert.equal(days[1].slots[1].available, false, 'free=0 是约满')
+})
+
+const SESSION = { token: 'T', oauthToken: 'O', lenovoid: 'uid-1' }
+const baseSubmit = {
+  sn: 'PS00CC2J', desc: '电池健康度86.7%', signature: 'SIG', bigClassId: 1, bigClass: '维修服务',
+  stationCode: '21006256', repairTime: '2026-9-12 10:00', appointmentDate: '2026-9-12',
+  timeBucket: '10:00-11:00', name: '张三', phone: '13800001111',
+}
+
+test('提交预约：到店单带门店和时段，service_mode_code=30', async () => {
+  let sent
+  const fetch = async (url, init) => {
+    sent = JSON.parse(init.body)
+    return json({ statusCode: 200, data: { so_no: 'SO123' } })
+  }
+  const r = await submitAppointment(SESSION, baseSubmit, { fetch })
+  assert.equal(r.submitted, true)
+  assert.equal(r.result.so_no, 'SO123')
+  assert.equal(sent.service_mode_code, 30)
+  assert.equal(sent.station_code, '21006256')
+  assert.equal(sent.uid, 'uid-1')
+  assert.equal(sent.service_mall_encrypted_data, 'SIG')
+  assert.equal(sent.so_type, 1)
+})
+
+test('提交预约：上门单清掉门店字段，带地址，service_mode_code=10', async () => {
+  let sent
+  const fetch = async (url, init) => {
+    sent = JSON.parse(init.body)
+    return json({ statusCode: 200, data: {} })
+  }
+  await submitAppointment(
+    SESSION,
+    { ...baseSubmit, mode: 'door', address: '某路 1 号', province: '北京市', city: '北京市', county: '东城区' },
+    { fetch },
+  )
+  assert.equal(sent.service_mode_code, 10)
+  assert.equal(sent.station_code, '')
+  assert.equal(sent.address, '某路 1 号')
+})
+
+test('提交预约：缺联系人/手机号/时间/门店时本地就拦下，不空打联想接口', async () => {
+  const boom = async () => {
+    throw new Error('不该发出请求')
+  }
+  const cases = [
+    [{ ...baseSubmit, name: '' }, 'MISSING_CONTACT'],
+    [{ ...baseSubmit, phone: '138' }, 'MISSING_CONTACT'],
+    [{ ...baseSubmit, repairTime: '' }, 'MISSING_TIME'],
+    [{ ...baseSubmit, stationCode: '' }, 'MISSING_STATION'],
+    [{ ...baseSubmit, mode: 'door', address: '' }, 'MISSING_ADDRESS'],
+  ]
+  for (const [payload, code] of cases) {
+    await assert.rejects(() => submitAppointment(SESSION, payload, { fetch: boom }), (e) => e.code === code)
+  }
+})
+
+test('提交预约：故障描述超 100 字要在发出前截断', async () => {
+  let sent
+  const fetch = async (url, init) => {
+    sent = JSON.parse(init.body)
+    return json({ statusCode: 200, data: {} })
+  }
+  await submitAppointment(SESSION, { ...baseSubmit, desc: '啊'.repeat(250) }, { fetch })
+  assert.equal(sent.desc.length, 100)
+})
+
+test('提交预约：重复预约报 ALREADY_BOOKED，不要让上层傻重试', async () => {
+  const fetch = async () => json({ statusCode: 444, message: '已预约' })
+  await assert.rejects(
+    () => submitAppointment(SESSION, baseSubmit, { fetch }),
+    (e) => e.code === 'ALREADY_BOOKED',
+  )
 })
 
 const LIVE_SN = process.env.LENOVO_LIVE_SN

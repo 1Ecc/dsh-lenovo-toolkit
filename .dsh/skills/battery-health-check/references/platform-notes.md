@@ -65,20 +65,44 @@ pmset + 关键寄存器摘要），没有做任何加工或筛选。对客户可
   脚本留空，判读时按 1000 次做参考基准，**必须在报告里写明这是假设值**。
 - **`CycleCount` 经常是 0。** 不少厂商的电池固件不上报循环次数。为 0 或空时就别提循环次数，
   用容量和衰减速率说话即可。
-- **联想机型的 MTM** 在 `Win32_ComputerSystemProduct.Name`（形如 `21HMA00WCD`），
-  友好机型名在 `.Version`（形如 `ThinkPad X1 Carbon Gen 11`）。
-  MTM 是查保修和备件价格的关键，报告里要带上。
+- **`Win32_ComputerSystemProduct.Name` 不一定是完整 MTM。** 这是实测推翻的一条旧假设：
+  ThinkPad 上它常是完整 10 位（`21HMA00WCD`），但**消费线（Yoga / 小新 / 拯救者）只有 4 位机型代码**
+  ——实测 Yoga Pro 14s ARH7 返回 `82TL`，而它的完整 MTM 是 `82TL007KCD`。
 
-### 尚未实机验证的部分
+  完整 MTM 在本机**任何 WMI 类里都取不到**（`Name` / `Model` / `SystemSKUNumber` /
+  `Win32_BaseBoard` 全试过，都只到 4 位）。所以采集脚本只输出能确定的部分：
 
-Windows 采集脚本在 macOS 上无法运行，目前**未经实机测试**。首次在 Windows 上跑时重点核对：
+  | 字段 | 来源 | 本例取值 |
+  |---|---|---|
+  | `device_machine_type` | `csp.Name` 前 4 位，兜底从 `SystemSKUNumber` 的 `_MT_xxxx_` 刨 | `82TL` |
+  | `device_mtm` | 仅当 `csp.Name` 本身就是完整 MTM 时才有值，**否则留空** | 空 |
+  | `device_model` | `csp.Version`，兜底 `cs.SystemFamily` | `Yoga Pro 14s ARH7` |
+  | `device_serial` | `Win32_BIOS.SerialNumber`，兜底 `csp.IdentifyingNumber` / 主板 | `PS00CC2J` |
+  | `device_bios_version` | `bios.SMBIOSBIOSVersion` | `JVCN40WW` |
+  | `device_sku` | `cs.SystemSKUNumber` | `LENOVO_MT_82TL_BU_idea_FM_Yoga Pro 14s ARH7` |
 
-1. `powercfg /batteryreport /xml` 的 XML 结构 —— 脚本用 `local-name()` 做命名空间无关匹配，
-   并且对「属性」和「子元素」两种写法都做了兼容，但 `HistoryEntry` 下容量字段的实际层级
-   需要打开生成的 XML 确认一遍。若 `history_points=0` 而 HTML 报告里明明有容量历史表，
-   就是这里没匹配上。
-2. `BatteryStaticData` 在部分机型上需要管理员权限才能读，注意观察是否有 CIM 报错。
-3. `First-Value` 把 `'0'` 也当作空值跳过。如果某机型的设计容量真的合法地为 0，
-   这个逻辑要调整——但实际不会出现。
-4. 中文 Windows 下 `Out-File -Encoding utf8` 在 PowerShell 5.1 会写出带 BOM 的文件，
-   `render_trend.py` 已用 `utf-8-sig` 读取，兼容。
+  **`device_mtm` 留空时不要用机型代码顶替。** 完整 MTM 要靠**主机编号在线换**——
+  `battery_warranty_lookup` 返回的 `machine.mtm` 就是它（本例 `82TL007KCD`）。
+  报告里的 MTM 一栏在查过保修之前写「需联网查询」，查过之后再填。
+
+- **主机编号（`device_serial`）是这条链路的真正主键**，查保修、查备件价、预约全靠它，
+  比 MTM 更关键。脚本会过滤 `Default string`、`To be filled by O.E.M.` 这类 SMBIOS 占位符——
+  这些值看着像数据，发到联想接口只会查无此机。
+
+### 实机验证状态
+
+2026-09-11 在 Windows 11 + PowerShell 5.1（Yoga Pro 14s ARH7）上跑通，逐条核对结果：
+
+1. ✅ `powercfg /batteryreport /xml` 的 `HistoryEntry` 层级匹配正确，`history_points=65`，
+   日期轴曲线用的是真实历史。若换机型后出现 `history_points=0` 而 HTML 报告里明明有容量历史表，
+   就是 `local-name()` 没匹配上，回来看这里。
+2. ✅ `BatteryStaticData` 在普通用户权限下可读（取到 `L21D4PE0`）。别的机型仍可能要管理员权限，
+   注意观察 CIM 是否报错。
+3. ⚠ `First-Value` 把 `'0'` 也当空值跳过。设计容量合法为 0 的机型实际不存在，但
+   **`cycle_count=0` 会因此被吞掉**——固件不上报循环次数的机型会表现成「循环次数未提供」，
+   这与预期一致（见上文），但要知道 0 和「没有」在这里是同一件事。
+4. ✅ 中文 Windows 下 `Out-File -Encoding utf8` 写出带 BOM 的文件，`render_trend.py` 用
+   `utf-8-sig` 读取，兼容。
+5. ⚠ **从 Node 的 `execFile` 启动 powershell 必须加 `-InputFormat None`。** 否则 PowerShell 5.1
+   会一直等 stdin 关闭，脚本跑完了进程也不退出，表现成「采集超时」——实测同一台机器
+   从 cmd 直跑 8 秒、从 Node 跑满 120 秒超时。`collector.js` 已经加上。

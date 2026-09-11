@@ -164,7 +164,9 @@ export async function renderTrend({ metricsPath, outPath, historyPath } = {}) {
 
     try {
       await execFileAsync(py, [...prefix, ...args], { timeout: RENDER_TIMEOUT_MS })
-      return { path: out }
+      // 一并把 SVG 内容读回来：趋势图要在对话里直接渲染，而不是丢给用户一个路径让他自己去开。
+      // 文件仍然照写，需要存档或发给服务网点时还得用它。
+      return { path: out, svg: readFileSync(out, 'utf8') }
     } catch (err) {
       throw new ToolkitError(`趋势图渲染失败：${err.stderr || err.message}`, 'RENDER_FAILED')
     }
@@ -204,10 +206,16 @@ export function summarize(metrics) {
   const hOs = num(m.health_pct_os)
   const hRaw = num(m.health_pct_raw)
   const unit = m.capacity_unit || 'mAh'
+  // MTM 与机型代码是两回事：消费线的 WMI 只给到 4 位机型代码，完整 MTM 得联网换。
+  // 这里把口径写死在输出里，省得下游把 82TL 当成 MTM 报给客户。
+  const mtm = m.device_mtm
+    ? `MTM ${m.device_mtm}`
+    : m.device_machine_type
+      ? `机型代码 ${m.device_machine_type}（完整 MTM 本地取不到，需用主机编号联网查）`
+      : null
   const lines = [
-    `设备：${[m.device_vendor, m.device_model, m.device_model_identifier && `(${m.device_model_identifier})`]
-      .filter(Boolean)
-      .join(' ')}`,
+    `设备：${[m.device_vendor, m.device_model, mtm && `· ${mtm}`].filter(Boolean).join(' ')}`,
+    `主机编号：${m.device_serial || '系统未提供'}`,
     `电池：${m.battery_model || '未知'}${m.battery_serial ? ` / SN ${m.battery_serial}` : ''}`,
     `设计容量：${m.design_capacity_mah || '未知'} ${unit}`,
     `当前满充容量：${m.full_charge_capacity_mah || '未知'} ${unit}`,
