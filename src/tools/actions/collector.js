@@ -15,6 +15,10 @@ const ALLOWED_URL_HOSTS = new Set([
     "support.lenovo.com",
     "pcsupport.lenovo.com",
     "www.lenovo.com",
+    // 国内服务链路：保修/备件价/门店查询、服务预约（需登录联想 ID，登录页由用户自己操作）
+    "newsupport.lenovo.com.cn",
+    "serviceorder.lenovo.com.cn",
+    "reg.lenovo.com.cn",
     "support.microsoft.com",
     "learn.microsoft.com",
 ]);

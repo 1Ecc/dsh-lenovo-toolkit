@@ -15,7 +15,7 @@
 |---|---|---|
 | `open_system_settings` | `power` / `network` / `storage` / `apps` / `display` / `bluetooth` / `windows_update` 七个页面 | 修改任何设置；打开白名单外的页面 |
 | `open_app` | 任务管理器、Lenovo Vantage | 任意路径、任意命令 |
-| `open_url` | 无凭据 HTTPS 的联想 / 微软官方白名单域名 | HTTP；白名单外域名 |
+| `open_url` | 无凭据 HTTPS 的联想 / 微软官方白名单域名（含 `newsupport` / `serviceorder` / `reg.lenovo.com.cn`，供电池服务链路拉起查询页与联想 ID 登录页） | HTTP；白名单外域名 |
 | `copy_diagnostic_report` | 写入剪贴板，上限 12000 字符 | 超长内容 |
 
 **只打开，不修改。** 这四个工具没有一个会改设置、装东西或删东西。

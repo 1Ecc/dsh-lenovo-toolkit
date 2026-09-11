@@ -65,10 +65,13 @@ test('两种口径一致时不要平白多出一行警示', () => {
   assert.doesNotMatch(s, /个百分点/)
 })
 
-test('readRules 能取到三份规则文档，未知名字要报错而不是返回空', () => {
+test('readRules 能取到四份规则文档，未知名字要报错而不是返回空', () => {
   assert.match(readRules('interpretation'), /健康度分级/)
   assert.match(readRules('platform'), /macOS/)
   assert.match(readRules('offers'), /触发条件/)
+  assert.match(readRules('service'), /drivewarrantyinfo/)
+  // 商品推荐已下线，规则文档里不能再出现商品链接，否则模型会照着推
+  assert.doesNotMatch(readRules('offers'), /item\.lenovo\.com\.cn\/product/)
   assert.throws(() => readRules('nope'), ToolkitError)
 })
 

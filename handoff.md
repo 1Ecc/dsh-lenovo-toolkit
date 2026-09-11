@@ -27,7 +27,7 @@
 | 段 | 内容 | 备注 |
 |---|---|---|
 | A | 装得上（`dsh plugin add` + 插件树加载） | **A-2 失败就别往下测**，先修 schema |
-| B | 17 个工具逐个冒烟，含 4 个受控操作的**拒绝路径** | |
+| B | 21 个工具逐个冒烟，含 4 个受控操作的**拒绝路径** | |
 | C | 9 个 skill 的发现与路由 | |
 | D | 通过之后才做：bump 版本 → 发 npm → 回写 progress.md → 更新收录平台 | 顺序不可颠倒 |
 
@@ -41,7 +41,7 @@
 | | 内容 |
 |---|---|
 | npm `dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布） | **只有电池工具组，3 个工具**（已拉 tarball 核对过） |
-| 仓库 `main` | **7 个能力域，17 个工具，9 个 skill** |
+| 仓库 `main` | **7 个能力域，21 个工具，9 个 skill** |
 
 **从插件市场用包名装到的用户，拿到的是只有电池检测的旧版本**；用 `github:` 源码规格
 装的才是当前代码。`package.json` 仍是 `0.1.1`。
@@ -60,7 +60,7 @@
 | 本地路径 | `/Users/huguiyuan/workspace/DSH plugin` ⚠️ 目录名带空格且与仓库名不一致，**已决定留到收尾时再改** |
 | 提交数 | 11（`awesome-dsh-plugin` 的 ≥10 门槛已满足） |
 | npm | `0.1.1`（**内容落后于仓库**，见上） |
-| 能力域 | **7 个**：`battery` / `device` / `performance` / `storage` / `app` / `wifi` / `actions`，共 **17 个 DSH 工具** |
+| 能力域 | **7 个**：`battery` / `device` / `performance` / `storage` / `app` / `wifi` / `actions`，共 **21 个 DSH 工具** |
 | Skill | 9 个（电池 + 8 个 Windows 设备助手，含总路由 `xiangbangbang-device-assistant`） |
 | 测试 | **36 个：35 通过 1 跳过**（`npm test`），每个能力域一份 + 仓库一致性与框架守卫 |
 | 埋点 | ❌ 无，转化数据仍然空白 |
@@ -264,7 +264,7 @@ git rev-list --count HEAD
 ls src/tools/ .dsh/skills/
 npm test
 
-# 能力域与工具数是否对得上（应当是 7 组 17 个，无重名）
+# 能力域与工具数是否对得上（应当是 7 组 21 个，无重名）
 node -e "
 const fs=require('fs');let all=[];
 for(const g of fs.readdirSync('src/tools').sort()){

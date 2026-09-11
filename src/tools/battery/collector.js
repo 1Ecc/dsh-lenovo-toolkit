@@ -88,10 +88,16 @@ export async function collect({ outDir } = {}) {
     platform === 'macos' ? 'collect_macos.sh' : 'collect_windows.ps1',
   )
 
+  // -InputFormat None 不是可选项：Node 的 execFile 会给子进程留一根打开的 stdin 管道，
+  // Windows PowerShell 5.1 在这种情况下会一直等 stdin 关闭，脚本本身跑完了进程也不退出，
+  // 表现成「采集超时」。实测 Windows 11 + PowerShell 5.1：从 cmd 跑 8 秒，从 Node 跑 120 秒超时。
   const [cmd, args] =
     platform === 'macos'
       ? ['bash', [script, '--outdir', dir]]
-      : ['powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-OutDir', dir]]
+      : [
+          'powershell',
+          ['-NoProfile', '-NonInteractive', '-InputFormat', 'None', '-ExecutionPolicy', 'Bypass', '-File', script, '-OutDir', dir],
+        ]
 
   let stdout
   try {
@@ -175,6 +181,7 @@ export function readRules(which = 'interpretation') {
     interpretation: 'references/interpretation.md',
     offers: 'references/lenovo-offers.md',
     platform: 'references/platform-notes.md',
+    service: 'references/service-flow.md',
   }
   const rel = files[which]
   if (!rel) {

@@ -14,6 +14,10 @@ test('URL 白名单按域名边界匹配，不能被子串蒙混过去', () => {
   // 经典的白名单绕过：把白名单域名做成攻击域名的前缀。
   assert.equal(validateAllowedUrl('https://support.lenovo.com.evil.example/'), null)
   assert.equal(validateAllowedUrl('http://support.lenovo.com/'), null, 'HTTP 不在白名单内')
+  // 电池服务链路要能拉起预约页和联想 ID 登录页（登录由用户自己操作）
+  assert.ok(validateAllowedUrl('https://serviceorder.lenovo.com.cn/h5/#/serviceOrderPC/selectService'))
+  assert.ok(validateAllowedUrl('https://reg.lenovo.com.cn/user_auth/toc/'))
+  assert.ok(validateAllowedUrl('https://newsupport.lenovo.com.cn/guardeploySearch.html'))
 })
 
 test('四个受控操作在未确认时一律拒绝执行', async () => {

@@ -83,10 +83,11 @@ test('每个 skill 的 frontmatter 都要加引号，否则 DSH 会静默拒绝'
   for (const name of skills) {
     const p = join(skillsRoot, name, 'SKILL.md')
     assert.ok(existsSync(p), `${name}/SKILL.md 应当存在`)
-    const m = readFileSync(p, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)
+    // Windows 上 core.autocrlf=true 会让工作区文件变成 CRLF，正则必须容忍 \r，否则整个守卫在 Windows 上恒失败
+    const m = readFileSync(p, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)
     assert.ok(m, `${name}/SKILL.md 应当有 frontmatter`)
 
-    for (const line of m[1].split('\n')) {
+    for (const line of m[1].split(/\r?\n/)) {
       const kv = line.match(/^([a-zA-Z-]+):\s*(.+)$/)
       if (!kv) continue
       const [, key, value] = kv
@@ -184,7 +185,7 @@ test('每个能力域都要带齐 collector / register / 文档 / 测试，并�
  * 这里不写死总数会更"灵活"，但也就守不住"迁移时漏掉一个工具"这类问题——
  * 所以刻意写死，改动工具数时必须同步改这里，逼人确认这是有意为之。
  */
-test('全仓库共注册 17 个工具，名字不得重复', () => {
+test('全仓库共注册 21 个工具，名字不得重复', () => {
   const toolsRoot = join(ROOT, 'src', 'tools')
   const source = walk(toolsRoot)
     .filter((p) => p.endsWith('register.js'))
@@ -192,7 +193,7 @@ test('全仓库共注册 17 个工具，名字不得重复', () => {
     .join('\n')
 
   const names = [...source.matchAll(/name:\s*'([^']+)'/g)].map((m) => m[1])
-  assert.equal(names.length, 17, '工具总数变了；确认是有意的再改这个数字')
+  assert.equal(names.length, 21, '工具总数变了；确认是有意的再改这个数字')
   assert.equal(new Set(names).size, names.length, '有重名工具，后注册的会覆盖先注册的')
 })
 
