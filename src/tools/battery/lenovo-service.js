@@ -573,12 +573,19 @@ export async function listAppointmentStores(
     headers: repairHeaders(session),
   })
   assertOk(body, '取可预约门店')
+  const hasCoords = lat != null && lng != null
   return (body.data || []).map((s) => ({
     code: s.StationCode,
-    name: s.StationName,
-    address: s.Address || s.address,
-    phone: s.Phone || s.phone,
-    distance_km: Number.isFinite(Number(s.Distance)) ? Number(s.Distance) : null,
+    // StationTitle 是门店招牌名（「联想服务中心海淀区知春路店」），StationName 是承接公司
+    // 的工商全名（「北京源晨动力技术服务有限公司」）。对用户要报前者，后者只做备注。
+    name: s.StationTitle || s.StationName,
+    company: s.StationName,
+    address: s.RepairAddress,
+    phone: s.HotPhone,
+    hours: s.BusinessHours,
+    // 不传坐标时联想对每一条都回 Distance=0。照抄就成了「每家店都在你脚下」，
+    // 比不给距离更误导，所以这种情况直接置 null。
+    distance_km: hasCoords && Number.isFinite(Number(s.Distance)) ? Number(s.Distance) : null,
     lat: s.GoogLeMapX,
     lng: s.GoogLeMapY,
   }))

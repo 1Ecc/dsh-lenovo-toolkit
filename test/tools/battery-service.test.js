@@ -17,6 +17,7 @@ import {
   findNearestStores,
   getSession,
   listAppointmentSlots,
+  listAppointmentStores,
   locateByIp,
   lookupBatteryPrice,
   lookupWarranty,
@@ -319,6 +320,43 @@ test('会话句柄：token 不进模型上下文，过期后明确报错', () =>
   assert.throws(() => getSession('bs_nope'), (e) => e.code === 'SESSION_EXPIRED')
   assert.equal(dropSession(id), true)
   assert.throws(() => getSession(id), (e) => e.code === 'SESSION_EXPIRED')
+})
+
+/**
+ * 可预约门店接口的字段名和免登录那个 station/list 完全不同——
+ * 实跑时才发现 address/phone 一直是空的，因为我按 station/list 的 Address/Phone 猜的。
+ */
+test('可预约门店：按 RepairAddress/HotPhone/StationTitle 取值，不传坐标时距离置 null', async () => {
+  const raw = {
+    statusCode: 200,
+    data: [
+      {
+        StationCode: '21000500',
+        StationName: '北京源晨动力技术服务有限公司',
+        StationTitle: '联想服务中心海淀区知春路店',
+        RepairAddress: '海淀区知春路17号联想客户服务中心',
+        HotPhone: '010-62059288',
+        BusinessHours: '周一至周日9:00-18:00',
+        GoogLeMapX: '39.982485',
+        GoogLeMapY: '116.353099',
+        Distance: 0,
+      },
+    ],
+  }
+  const fetch = fetchFor([['repair/appointment/station', raw]])
+  const s = (await listAppointmentStores({ token: 'T', oauthToken: 'O' }, { sn: 'X' }, { fetch }))[0]
+  assert.equal(s.name, '联想服务中心海淀区知春路店', '要报门店招牌名，不是承接公司工商名')
+  assert.equal(s.company, '北京源晨动力技术服务有限公司')
+  assert.equal(s.address, '海淀区知春路17号联想客户服务中心')
+  assert.equal(s.phone, '010-62059288')
+  assert.equal(s.hours, '周一至周日9:00-18:00')
+  // 不传坐标时联想对每条都回 0，照抄就成了「每家店都在你脚下」
+  assert.equal(s.distance_km, null)
+
+  const withCoords = (
+    await listAppointmentStores({ token: 'T', oauthToken: 'O' }, { sn: 'X', lat: 39.9, lng: 116.4 }, { fetch })
+  )[0]
+  assert.equal(withCoords.distance_km, 0)
 })
 
 test('可预约时段：当天一律不可选，约满的也不可选', async () => {
