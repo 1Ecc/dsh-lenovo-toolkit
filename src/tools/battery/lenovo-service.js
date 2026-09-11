@@ -656,7 +656,12 @@ export async function submitAppointment(
 ) {
   if (!name) throw new ToolkitError('缺少联系人昵称', 'MISSING_CONTACT')
   if (!/^\d{11}$/.test(String(phone || ''))) throw new ToolkitError('手机号必须是 11 位数字', 'MISSING_CONTACT')
-  if (!repairTime) throw new ToolkitError('缺少预约时间', 'MISSING_TIME')
+  // 页面口径（timeNearlyChange）：repair_time = "YYYY-MM-DD HH:00:00"，即所选日期 + 时段起点 + ":00"。
+  // 让调用方只传日期和时段、这里拼，比让模型记一个带秒的格式可靠——实跑时文档就写漏了秒。
+  if (!repairTime && appointmentDate && timeBucket) {
+    repairTime = `${appointmentDate} ${String(timeBucket).split('-')[0]}:00`
+  }
+  if (!repairTime) throw new ToolkitError('缺少预约时间（传 appointmentDate + timeBucket）', 'MISSING_TIME')
   if (mode === 'store' && !stationCode) throw new ToolkitError('到店预约必须选门店', 'MISSING_STATION')
   if (mode === 'door' && !address) throw new ToolkitError('上门预约必须填详细地址', 'MISSING_ADDRESS')
 

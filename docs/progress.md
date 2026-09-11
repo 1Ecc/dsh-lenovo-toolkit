@@ -152,7 +152,7 @@
 |---|---|---|
 | 电池工具 · macOS | ✅ 实机验证 | 集成测试真实采集，`npm test` 每次跑 |
 | 电池服务链路 · 保修/备件价/门店接口 | ✅ 真实 SN 打通 | 2026-09-11 用一台 Yoga Pro 14s 实测：保修判定正确识别延保「不包含电池」，备件价 ¥399，门店列表带距离。**接口为联想站内接口，无稳定性承诺**，离线夹具测试 + `LENOVO_LIVE_SN` 可选线上用例 |
-| 电池服务链路 · 预约提交 | ⏳ **已实现，未端到端实跑** | 2026-09-11 补齐 `battery_appointment_start/_options/_submit`：用户自己登录后取 `cerpreg-passport` → 换用户 token + 页面 oauth token → 选门店/时段 → 提交。payload 与鉴权头（`Authorization` 单数 vs `Authorizations`+`Authenticates` 复数）逐字对照前端 JS，离线夹具测试覆盖到店/上门/各种缺参/重复预约。**但没有真实登录态，整条链路未实跑过**——需要一个愿意登录的账号验一单 |
+| 电池服务链路 · 预约提交 | ✅ **真实登录态端到端实跑一单** | 2026-09-11 用真实联想 ID 跑通 `battery_appointment_start/_options/_submit` 全链路并生成工单 `202609112100620029`（清河万象汇店，到店）。实跑纠正了两处：可预约门店接口字段名（`RepairAddress`/`HotPhone`/`StationTitle`，与免登录门店接口不同）；`repair_time` 格式带秒（`YYYY-MM-DD HH:00:00`），现由工具从日期+时段自拼。**上门（door）分支未实跑**——这台机 `is_door=0`，联想不给它上门服务，需要另一台支持上门的机器验 |
 | 电池服务链路 · 维修抵扣券（膨胀金） | ⚠ 倍数不可编程获取 | 商品页写明「双倍抵扣」，但倍数/适用门店/上下架都不在接口里（实测那张 ¥80 的券仅限阳光雨露服务站且**已下架**）。代码只返回 `pay_cny` 和链接，倍数交给模型实时核实，不写死 ×2 |
 | 电池服务链路 · 转人工 | ⚠ **mock** | `battery_service_handoff` 只生成回执，未接坐席系统；返回体 `mock: true` |
 | 电池工具 · Windows | ✅ 实机验证（2026-09-11） | Windows 11 + PowerShell 5.1（Yoga Pro 14s ARH7）跑通：`HistoryEntry` 层级匹配正确（`history_points=65`，走真实日期轴）、`BatteryStaticData` 普通权限可读、趋势图渲染正常。同时修掉两个真问题：**从 Node `execFile` 起 powershell 必须加 `-InputFormat None`**（否则等 stdin 不退出，表现成 120 秒采集超时），以及**机型代码被误当 MTM**（见下行） |

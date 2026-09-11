@@ -156,7 +156,7 @@ IP 定位在公司网络/代理下经常偏到别的城市，**报门店前把�
 | 故障描述 `desc` | `battery_service_stores` 返回的 `fault_description`，**上限 100 字** |
 | 服务方式 | `mode=store` 到店（默认）/ `mode=door` 上门 |
 | 门店 | 到店必填 `stationCode` |
-| 时间 | `repairTime`（`YYYY-M-D HH:00`）+ `appointmentDate` + `timeBucket` |
+| 时间 | `appointmentDate`（options 返回的 `date`）+ `timeBucket`（原样取 `slots[].time`）。工具自己拼成联想要的 `YYYY-MM-DD HH:00:00`，不用传 |
 | 联系人 `name` / 手机号 `phone` | **向用户索取，不要拿账号预留号码顶替，也不要编** |
 
 **提交是不可撤回的对外动作。** 调用前把整单（门店、地址、时段、联系人、手机号、故障描述）

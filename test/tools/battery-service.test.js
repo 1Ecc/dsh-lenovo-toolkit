@@ -384,11 +384,11 @@ test('可预约时段：当天一律不可选，约满的也不可选', async ()
 const SESSION = { token: 'T', oauthToken: 'O', lenovoid: 'uid-1' }
 const baseSubmit = {
   sn: 'PS00CC2J', desc: '电池健康度86.7%', signature: 'SIG', bigClassId: 1, bigClass: '维修服务',
-  stationCode: '21006256', repairTime: '2026-9-12 10:00', appointmentDate: '2026-9-12',
+  stationCode: '21006256', appointmentDate: '2026-09-12',
   timeBucket: '10:00-11:00', name: '张三', phone: '13800001111',
 }
 
-test('提交预约：到店单带门店和时段，service_mode_code=30', async () => {
+test('提交预约：到店单带门店和时段，service_mode_code=30，repair_time 由日期+时段拼出', async () => {
   let sent
   const fetch = async (url, init) => {
     sent = JSON.parse(init.body)
@@ -399,6 +399,10 @@ test('提交预约：到店单带门店和时段，service_mode_code=30', async 
   assert.equal(r.result.so_no, 'SO123')
   assert.equal(sent.service_mode_code, 30)
   assert.equal(sent.station_code, '21006256')
+  // 2026-09-11 实跑核对过的页面口径：日期 + 时段起点 + ":00"，带秒。漏了秒是当时文档的错
+  assert.equal(sent.repair_time, '2026-09-12 10:00:00')
+  assert.equal(sent.appointmentDate, '2026-09-12')
+  assert.equal(sent.timeBucket, '10:00-11:00')
   assert.equal(sent.uid, 'uid-1')
   assert.equal(sent.service_mall_encrypted_data, 'SIG')
   assert.equal(sent.so_type, 1)
@@ -427,7 +431,7 @@ test('提交预约：缺联系人/手机号/时间/门店时本地就拦下，�
   const cases = [
     [{ ...baseSubmit, name: '' }, 'MISSING_CONTACT'],
     [{ ...baseSubmit, phone: '138' }, 'MISSING_CONTACT'],
-    [{ ...baseSubmit, repairTime: '' }, 'MISSING_TIME'],
+    [{ ...baseSubmit, appointmentDate: '', timeBucket: '' }, 'MISSING_TIME'],
     [{ ...baseSubmit, stationCode: '' }, 'MISSING_STATION'],
     [{ ...baseSubmit, mode: 'door', address: '' }, 'MISSING_ADDRESS'],
   ]
