@@ -213,18 +213,17 @@ npm run sync-skill    # 电池 .codex → .dsh/.claude；其他 skill .dsh → .
 |---|---|
 | 电池工具 · macOS | ✅ 实机验证 |
 | 电池工具 · Windows | ✅ 实机验证（2026-09-11，Windows 11 + PowerShell 5.1）。顺带修掉 `-InputFormat None` 采集超时与「机型代码被当成 MTM」两个真问题 |
-| 非电池工具（device / wifi / actions） | ⏳ 原 Device MCP 已在 Windows 11 验证过，**本仓库的 DSH Cordis 注册壳未验证** |
-| Cordis 工具注册 | ⏳ **部分**。电池版本在 DSH Desktop 上暴露过 schema 编译器问题并已修复（`87ee6c5`），23 工具版本未重新验证 |
-| `dsh plugin add` 安装 | ⏳ **部分**。只在电池版本上实测过；23 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
+| 非电池工具（device / wifi / actions） | ⏳ 原 Device MCP 已在 Windows 11 验证过；本仓库 23 工具的 DSH 注册壳已真实加载，但非电池工具尚未在 DSH 对话中逐项冒烟 |
+| Cordis 工具注册 | ✅ 2026-09-18 在 DSH `0.1.2-rc.1` 的 `web` profile 真实加载；inventory 中 `include:lenovo-toolkit` 为 `active`，无 schema 编译错误 |
+| `dsh plugin add` 安装 | ✅ 2026-09-18 以 `github:1Ecc/dsh-lenovo-toolkit` 安装成功，无构建步骤；配置树和 Web 插件树正常加载 |
 | 转化数据 | ❌ 无埋点 |
 | 品牌归属 | ❌ 未定论 |
 | 电池服务链路（保修 / 备件价 / 门店） | ✅ 真实 SN 打通（2026-09-11）；接口为联想站内接口，无稳定性承诺 |
 | 电池服务链路（预约提交） | ✅ 真实登录态下端到端实跑一单（2026-09-11，到店）；**上门分支未实跑**（测试机不支持上门） |
 | 电池服务链路（联系人工） | ⚠ 未接坐席系统，仅提供官方热线 `400-990-8888`，不生成虚假回执 |
 
-⚠️ **npm 上的包落后于本仓库**：`dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布）只含电池工具组，
-而本仓库自 2026-09-03 起已有 17 个工具（2026-09-07 重构为 7 个能力域，2026-09-11 电池组加入服务与预约链路后曾为 24 个；2026-09-18 删除虚假转人工工具后为 23 个）。用 npm 包名安装拿到的是旧版，
-用 `github:` 源码规格安装拿到的才是当前代码。
+`dsh-lenovo-toolkit@0.2.0` 对应当前 7 个能力域、23 个工具和 9 个 Skill；
+`0.1.1` 是仅含 3 个电池工具的历史版本。
 
 完整清单与优先级见 [docs/progress.md](docs/progress.md)。
 

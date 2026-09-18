@@ -161,7 +161,7 @@
 **必须诚实记录的部分，不要在对外材料里跳过。这张表是全仓库验证口径的唯一事实来源**——
 `AGENTS.md`、`README.md`、`handoff.md` 都指向这里，改状态只改这一处。
 
-更新于 2026-09-11。
+更新于 2026-09-18。
 
 | 项 | 状态 | 依据 |
 |---|---|---|
@@ -172,18 +172,14 @@
 | 电池服务链路 · 联系人工 | ⚠ 未接坐席系统 | 仅提供官方热线 `400-990-8888`；2026-09-18 已删除会生成虚假回执的 `battery_service_handoff` |
 | 电池工具 · Windows | ✅ 实机验证（2026-09-11） | Windows 11 + PowerShell 5.1（Yoga Pro 14s ARH7）跑通：`HistoryEntry` 层级匹配正确（`history_points=65`，走真实日期轴）、`BatteryStaticData` 普通权限可读、趋势图渲染正常。同时修掉两个真问题：**从 Node `execFile` 起 powershell 必须加 `-InputFormat None`**（否则等 stdin 不退出，表现成 120 秒采集超时），以及**机型代码被误当 MTM**（见下行） |
 | 设备标识 · MTM | ✅ 已纠正（2026-09-11） | 旧假设「`csp.Name` 就是完整 MTM」在消费线上不成立：实测只返回 4 位机型代码 `82TL`，完整 MTM `82TL007KCD` **本地任何 WMI 类都取不到**，只能用主机编号走 `getmachineinfo` 换。现输出 `device_machine_type` + 留空的 `device_mtm`，并过滤 SMBIOS 占位符；`test/tools/battery.test.js` 有守卫 |
-| 非电池工具（device / wifi / actions） | ⏳ **部分** | 原想帮帮 Device MCP 已在 Windows 11 验证；**本仓库的 DSH Cordis 注册壳未验证**。不得把前者表述成后者 |
-| Cordis 工具注册 | ⏳ **部分** | `87ee6c5` 是在 DSH Desktop 上撞到 schema 编译器才修的，说明电池版本被真实加载过；**23 工具版本未重新验证**（新增服务链路工具的参数全用 string/number/boolean，刻意避开 object 类型参数） |
-| `dsh plugin add` 安装 | ⏳ **部分** | 只在电池版本上实测过；23 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
-| npm 线上包 | ❌ **落后于仓库** | `0.1.1`（2026-08-31）只含电池工具组 3 个工具；仓库自 `a66d386`（2026-09-03）起为 17 工具（2026-09-07 重构为 7 个能力域，2026-09-11 加服务与预约链路后曾为 24 个；2026-09-18 删除虚假转人工工具后为 23 个）。npm 包名安装拿到的是旧版 |
+| 非电池工具（device / wifi / actions） | ⏳ **部分** | 原想帮帮 Device MCP 已在 Windows 11 验证；本仓库 23 工具的 DSH Cordis 注册壳已真实加载，但非电池工具尚未在 DSH 对话中逐项冒烟。不得把注册成功表述成功能逐项验证 |
+| Cordis 工具注册 | ✅ **23 工具版本真实加载** | 2026-09-18 使用 DSH `0.1.2-rc.1` 启动 `web` profile；配置树包含 `lenovo-toolkit`，Web 服务正常启动，插件 inventory 中 `include:lenovo-toolkit` 为 `active`，无 schema 编译错误 |
+| `dsh plugin add` 安装 | ✅ **23 工具版本真实安装** | 2026-09-18 执行 `dsh plugin --profile web add github:1Ecc/dsh-lenovo-toolkit` 成功，无 `allowBuilds`；随后配置树与插件树均正常加载 |
+| npm 线上包 | ✅ **已同步至 0.2.0** | 2026-09-18 发布；包含 7 个能力域、23 个工具和 9 个 Skill。`0.1.1` 为仅含 3 个电池工具的历史版本 |
 | 转化数据 | ❌ 无埋点 | H3 完全没有数据 |
 | 品牌归属 | ❌ 未定论 | 见 vision.md 风险章节 |
 | 迁入内容来源授权 | ❌ 待确认 | 14 个工具迁自「想帮帮 Device MCP」，以 MIT 发到公共仓是否已获授权 |
 | ~~商品 ID `1045747`~~ | ➖ 已失效 | 2026-09-11 商品推荐整体下线，不再需要核对 |
 
-**优先级**：「Cordis 工具注册 · 23 工具版本」和「`dsh plugin add` · 23 工具版本」最需要优先补——
-目录站不会替我们验证，「装不上」或「工具注册不上」会直接变成用户的第一印象。
-而且 schema 不合规会阻断**整个插件树**加载，不是单个工具不可用。
-
-**这两项是 npm 发版的前置条件，顺序不可颠倒。**
-逐项验证步骤见 **[verification-checklist.md](verification-checklist.md)**。
+下一优先级是按 **[verification-checklist.md](verification-checklist.md)** 在 DSH 对话中逐项冒烟非电池工具；
+当前只能声明安装与注册壳已验证，不能把它扩大成每个工具的完整功能验证。

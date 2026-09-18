@@ -74,19 +74,15 @@
 
 ---
 
-## ⚠️ 线上 npm 包仍然落后于仓库
+## npm 包状态
 
 | | 内容 |
 |---|---|
-| npm `dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布） | **只有电池工具组，3 个工具**（已拉 tarball 核对过） |
-| 仓库工作树 | **7 个能力域，23 个工具，9 个 skill** |
+| npm `dsh-lenovo-toolkit@0.2.0`（2026-09-18 发布） | **7 个能力域，23 个工具，9 个 skill** |
+| npm `dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布） | 历史版本：只有电池工具组，3 个工具 |
 
-**从插件市场用包名装到的用户，拿到的是只有电池检测的旧版本**；用 `github:` 源码规格
-装的才是当前代码。`package.json` 仍是 `0.1.1`。
-
-这不是 bug，是发版流程没走完，而且**是有意没走完**：把未在 DSH 运行时验证过的
-23 工具版本推上 npm，风险比保持旧版更大——schema 不合规会阻断**整个插件树**加载，
-用户装上后是整个插件废掉，不是某个工具不可用。
+2026-09-18 已用 GitHub 源码规格安装到 DSH `0.1.2-rc.1` 的 `web` profile；配置树、Web 启动和
+插件 inventory 均确认 `lenovo-toolkit` 为 `active`，无 schema 编译错误。随后发布 `0.2.0`。
 
 ---
 
@@ -97,10 +93,10 @@
 | 仓库 | [1Ecc/dsh-lenovo-toolkit](https://github.com/1Ecc/dsh-lenovo-toolkit) · public · 创建于 2026-08-28 |
 | 本次测试路径 | `D:\coding\Project\Workspace\dsh-lenovo-toolkit`（Windows） |
 | 提交数 | 15（上游已取消提交数门槛；当前只要求仓库创建满 1 天） |
-| npm | `0.1.1`（**内容落后于仓库**，见上） |
+| npm | `0.2.0`（与当前 23 工具版本同步） |
 | 能力域 | **7 个**：`battery` / `device` / `performance` / `storage` / `app` / `wifi` / `actions`，共 **23 个 DSH 工具** |
 | Skill | 9 个（电池 + 8 个 Windows 设备助手，含总路由 `xiangbangbang-device-assistant`） |
-| 测试 | **72 个：64 通过 8 跳过**（2026-09-14 Windows `npm test`），含独立预约入口离线夹具、仓库一致性与框架守卫 |
+| 测试 | **76 个：68 通过 8 跳过**（2026-09-18 Windows `npm test`），含真实电池采集、独立预约入口离线夹具、仓库一致性与框架守卫 |
 | 埋点 | ❌ 无，转化数据仍然空白 |
 
 **收录状态**：
@@ -235,7 +231,7 @@ Get-ChildItem src/tools, .dsh/skills # 应当是 7 个能力域 + 9 个 skill
 | Python | `python3`，仅趋势图渲染用，只依赖标准库；Windows 上注意执行别名问题 |
 | GitHub | 账号 `1Ecc`，SSH key 已绑定；`gh` CLI 已认证（keyring） |
 | git 身份 | 只配了**本仓库局部**身份，用 noreply 邮箱；全局 git 身份是空的 |
-| npm | 已发布至 `0.1.1`；发布账号需向原维护者确认 |
+| npm | 已发布至 `0.2.0`；发布账号 `ecc-hgy` |
 | 无构建步骤 | 插件是 ESM JS，改完直接生效 |
 | peer 依赖 | `@deepseek-ai/dsh-tools` 开发机上没装，所以 `collector.js` **不许** import 它，否则整个模块没法测 |
 
