@@ -5,7 +5,10 @@
 # 因为这个脚本要跑在客户机器上，不能假设装了 Python、Homebrew 或任何工具链。
 #
 # 用法：
-#   collect_macos.sh [--outdir <目录>]
+#   collect_macos.sh [--outdir <目录>] [--render]
+#
+#   --render  采集后自动找 python3/python 调 render_trend.py，把趋势图路径和判读字段接在指标后面打印；
+#             没有 Python 时打印 assessment_skipped=python_missing
 #
 # 产出：
 #   <outdir>/metrics.env                   KEY=VALUE 指标（同时打印到 stdout）
@@ -23,10 +26,12 @@ if [ "$(uname -s)" != "Darwin" ]; then
 fi
 
 OUTDIR=""
+RENDER=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --outdir) OUTDIR="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --render) RENDER=1; shift ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 1 ;;
   esac
 done
@@ -139,7 +144,11 @@ if [ -n "$FCC_MAH" ] && [ -n "$DESIGN_MAH" ] && [ "$DESIGN_MAH" -gt 0 ] 2>/dev/n
   HEALTH_RAW=$(awk -v f="$FCC_MAH" -v d="$DESIGN_MAH" 'BEGIN{printf "%.1f", f*100/d}')
 fi
 
-[ -z "$DESIGN_CYCLES" ] && DESIGN_CYCLES=1000
+DESIGN_CYCLES_SOURCE="device"
+if [ -z "$DESIGN_CYCLES" ]; then
+  DESIGN_CYCLES=1000
+  DESIGN_CYCLES_SOURCE="assumed"
+fi
 
 # ---------- 官方完整电池报告 ----------
 REPORT="$OUTDIR/battery-report-macos.txt"
@@ -219,6 +228,7 @@ METRICS="$OUTDIR/metrics.env"
   echo "health_pct_raw=$HEALTH_RAW"
   echo "cycle_count=$CYCLES"
   echo "design_cycle_count=$DESIGN_CYCLES"
+  echo "design_cycle_count_source=$DESIGN_CYCLES_SOURCE"
   echo "condition=$CONDITION"
   echo "state_of_charge_pct=$SOC"
   echo "voltage_mv=$VOLT_MV"
@@ -237,5 +247,18 @@ METRICS="$OUTDIR/metrics.env"
   echo "raw_dir=$RAW"
   echo "outdir=$OUTDIR"
 } | tee "$METRICS"
+
+# ---------- 可选：趋势图 + 判读字段 ----------
+if [ "$RENDER" = "1" ]; then
+  SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+  RENDERED=0
+  for PY in python3 python; do
+    if command -v "$PY" >/dev/null 2>&1 && "$PY" --version >/dev/null 2>&1; then
+      "$PY" "$SCRIPT_DIR/render_trend.py" --metrics "$METRICS" --out "$OUTDIR/battery-trend.svg" && RENDERED=1
+      break
+    fi
+  done
+  [ "$RENDERED" = "1" ] || echo "assessment_skipped=python_missing"
+fi
 
 exit 0

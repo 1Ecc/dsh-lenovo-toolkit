@@ -21,7 +21,6 @@ import {
   locateByIp,
   lookupBatteryPrice,
   lookupWarranty,
-  mockHumanHandoff,
   normalizeSn,
   putSession,
   submitAppointment,
@@ -202,8 +201,10 @@ test('门店：按距离升序，城市名自动补「市」，无坐标时标�
   assert.equal(r.stores[0].name, '近店')
   assert.equal(r.distance_is_estimate, true)
 
-  const r2 = await findNearestStores({ city: '北京市', lat: 39.9, lng: 116.4 }, { fetch })
+  const r2 = await findNearestStores({ city: '北京市', lat: 39.9, lng: 116.4, locationSource: 'user_map' }, { fetch })
   assert.equal(r2.distance_is_estimate, false)
+  const ip = await findNearestStores({ city: '北京市', lat: 39.9, lng: 116.4, locationSource: 'ip' }, { fetch })
+  assert.equal(ip.distance_is_estimate, true)
 })
 
 test('门店：联想返回 200404 时给空列表和说明，不抛错', async () => {
@@ -263,14 +264,6 @@ test('故障描述：装不下的字段整段丢弃，不能截出半句话', ()
   }
 })
 
-test('转人工是 mock：返回体必须自报 mock=true，回执字段齐全', () => {
-  const r = mockHumanHandoff({ sn: 'PS00CC2J', summary: '摘要' })
-  assert.equal(r.mock, true)
-  assert.match(r.ticket_id, /^LNV-\d{8}-\d{4}$/)
-  assert.ok(r.queue_position >= 1 && r.eta_minutes >= 2)
-  assert.equal(r.summary_forwarded, true)
-})
-
 // --- 预约链路 ---
 
 const APPOINT_OK = [
@@ -310,6 +303,15 @@ test('建立预约会话：登录态失效要报 LOGIN_REQUIRED，而不是笼�
     () => createAppointmentSession('  ', { fetch }),
     (e) => e.code === 'LOGIN_REQUIRED',
   )
+})
+
+test('鉴权支持字符串状态码，失败携带具体阶段', async () => {
+  const stringCodes = APPOINT_OK.map(([path, body]) => [path, { ...body, statusCode: '200' }])
+  const session = await createAppointmentSession('fixture', { fetch: fetchFor(stringCodes) })
+  assert.equal(session.lenovoid, 'uid-1')
+  await assert.rejects(createAppointmentSession('fixture', { fetch: fetchFor([
+    APPOINT_OK[0], ['oauth/token', { statusCode: '3002' }],
+  ]) }), e => e.code === 'TOKEN_EXPIRED' && e.stage === 'page_token')
 })
 
 test('会话句柄：token 不进模型上下文，过期后明确报错', () => {

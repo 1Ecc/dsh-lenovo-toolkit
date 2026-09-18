@@ -2,7 +2,7 @@
 
 写给**冷启动接手这个项目的人**——不需要看过之前的对话也能接上。
 
-更新于 2026-09-07（前三版：2026-08-28、2026-09-02、2026-09-07 早些时候）。
+更新于 2026-09-14（此前版本：2026-08-28、2026-09-02、2026-09-07）。
 状态类信息会过期，接手时请按[怎么核对当前状态](#怎么核对当前状态)先跑一遍。
 
 ---
@@ -17,9 +17,47 @@
 
 ---
 
-## ⚠️ 下一步就是这件事：在 Windows 上跑验证清单
+## ⚠️ 当前第一优先：修通独立 Skill 的浏览器鉴权交接
 
-代码侧已经就绪，**卡在验证**。
+2026-09-14 在 Codex/terra 和豆包上做了预约流程测试。独立 Skill 已经具备免登录查询、
+浏览器登录取鉴权、可预约门店/时段、确认单据和 API 提交的代码路径，但**新的独立入口尚未完成
+真实登录和真实下单验证**。当前最先遇到的阻塞不是预约接口，而是验证码环境：
+
+- 固定位置 `北京市海淀区联想三标大厦` 能用于查候选门店，测试选择了
+  `联想服务中心海淀区清河万象汇店`。
+- Skill 拉起的专用 Chrome/Edge 中，用户手动拖动拼图持续失败；同一用户改用自己的日常浏览器，
+  一次通过。**这是已复现的用户测试现象，不是自动化测试结论。**
+- 当前专用浏览器使用临时用户目录、`--remote-debugging-port=0` 和额外的隐身
+  browser context。高概率是全新/隐身会话缺少设备信誉，叠加远程调试环境触发了验证码风控；
+  也可能有跨域 cookie 或浏览器指纹因素。尚未做逐项变量对照，不能把其中任一项写成已证实根因。
+- “平台右侧能打开浏览器”不等于“Skill 能取得鉴权”。要走 API 预约，平台至少还要安全提供
+  当前页面的会话交接能力（例如本机 CDP endpoint + targetId，或平台原生的等价 opaque session
+  bridge）。只提供可见页面/点击自动化时，最多能走网页自动化，无法把
+  `cerpreg-passport` 安全交给独立进程。
+- 当前实现已经支持显式 `endpoint` + `targetId` 接入，但 Codex、豆包右侧浏览器是否暴露这些能力
+  **均未实机验证**，不能宣称通用接入。
+
+建议下一位接手者先做两件事：
+
+1. 为浏览器登录定义平台适配接口，分别探测 Codex 与豆包能否提供页面打开、用户接管、鉴权会话
+   交接；不能交接的平台要明确报能力限制，不要静默改成网页自动化预约。
+2. 对专用浏览器做最小变量实验：保留/移除额外隐身 context、临时/持久专用 profile、调试参数，
+   记录验证码成功率和登录后 cookie 是否完整。不要读取用户默认浏览器 cookie 数据库，也不要要求
+   用户把鉴权 cookie 粘贴进聊天。
+
+相关实现与说明：
+
+- `.dsh/skills/battery-health-check/scripts/service.mjs`
+- `.dsh/skills/battery-health-check/scripts/service-lib/browser.mjs`
+- `.dsh/skills/battery-health-check/references/standalone-service.md`
+- `test/tools/battery-standalone.test.js`
+- `docs/progress.md` 第六章“2026-09-14：独立 Skill 预约适配”
+
+---
+
+## 后续发布主线：在 Windows 上跑验证清单
+
+除上述预约鉴权阻塞外，插件发布仍卡在完整 DSH 验证。
 
 照着 **[`docs/verification-checklist.md`](docs/verification-checklist.md)** 逐项跑，
 需要一台能跑 DSH 的 Windows。清单分四段：
@@ -27,7 +65,7 @@
 | 段 | 内容 | 备注 |
 |---|---|---|
 | A | 装得上（`dsh plugin add` + 插件树加载） | **A-2 失败就别往下测**，先修 schema |
-| B | 24 个工具逐个冒烟，含 4 个受控操作的**拒绝路径** | |
+| B | 23 个工具逐个冒烟，含 4 个受控操作的**拒绝路径** | |
 | C | 9 个 skill 的发现与路由 | |
 | D | 通过之后才做：bump 版本 → 发 npm → 回写 progress.md → 更新收录平台 | 顺序不可颠倒 |
 
@@ -41,13 +79,13 @@
 | | 内容 |
 |---|---|
 | npm `dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布） | **只有电池工具组，3 个工具**（已拉 tarball 核对过） |
-| 仓库 `main` | **7 个能力域，24 个工具，9 个 skill** |
+| 仓库工作树 | **7 个能力域，23 个工具，9 个 skill** |
 
 **从插件市场用包名装到的用户，拿到的是只有电池检测的旧版本**；用 `github:` 源码规格
 装的才是当前代码。`package.json` 仍是 `0.1.1`。
 
 这不是 bug，是发版流程没走完，而且**是有意没走完**：把未在 DSH 运行时验证过的
-24 工具版本推上 npm，风险比保持旧版更大——schema 不合规会阻断**整个插件树**加载，
+23 工具版本推上 npm，风险比保持旧版更大——schema 不合规会阻断**整个插件树**加载，
 用户装上后是整个插件废掉，不是某个工具不可用。
 
 ---
@@ -57,12 +95,12 @@
 | 项 | 状态 |
 |---|---|
 | 仓库 | [1Ecc/dsh-lenovo-toolkit](https://github.com/1Ecc/dsh-lenovo-toolkit) · public · 创建于 2026-08-28 |
-| 本地路径 | `/Users/huguiyuan/workspace/DSH plugin` ⚠️ 目录名带空格且与仓库名不一致，**已决定留到收尾时再改** |
-| 提交数 | 11（`awesome-dsh-plugin` 的 ≥10 门槛已满足） |
+| 本次测试路径 | `D:\coding\Project\Workspace\dsh-lenovo-toolkit`（Windows） |
+| 提交数 | 15（上游已取消提交数门槛；当前只要求仓库创建满 1 天） |
 | npm | `0.1.1`（**内容落后于仓库**，见上） |
-| 能力域 | **7 个**：`battery` / `device` / `performance` / `storage` / `app` / `wifi` / `actions`，共 **24 个 DSH 工具** |
+| 能力域 | **7 个**：`battery` / `device` / `performance` / `storage` / `app` / `wifi` / `actions`，共 **23 个 DSH 工具** |
 | Skill | 9 个（电池 + 8 个 Windows 设备助手，含总路由 `xiangbangbang-device-assistant`） |
-| 测试 | **36 个：35 通过 1 跳过**（`npm test`），每个能力域一份 + 仓库一致性与框架守卫 |
+| 测试 | **72 个：64 通过 8 跳过**（2026-09-14 Windows `npm test`），含独立预约入口离线夹具、仓库一致性与框架守卫 |
 | 埋点 | ❌ 无，转化数据仍然空白 |
 
 **收录状态**：
@@ -71,7 +109,7 @@
 |---|---|
 | dshfind | ✅ **已收录** `1Ecc/dsh-lenovo-toolkit`，分类 `tools`（尚未评级） |
 | 1024Store（deepseek1024.com） | ⚠️ 已收录但**有两条重复条目**，其中一条已 verified，见下 |
-| awesome-dsh-plugin | ⏳ 条目已备好，**年龄和提交数门槛都已满足**，尚未提交 |
+| awesome-dsh-plugin | ⏳ 条目已备好，**仓库年龄门槛已满足**，尚未提交 |
 
 ---
 
@@ -96,7 +134,7 @@
 
 | 能力域 | 工具数 | 对应 skill | 平台 |
 |---|---|---|---|
-| `battery` | 3 | `battery-health-check` | macOS + Windows |
+| `battery` | 9 | `battery-health-check` | macOS + Windows |
 | `device` | 1 | `device-overview` | Windows |
 | `performance` | 2 | `performance-diagnosis` | Windows |
 | `storage` | 1 | `storage-diagnosis` | Windows |
@@ -170,10 +208,11 @@ GitHub 有 301 重定向所以链接不死，但目录里的 `id` 与真实仓�
 ## 接手第一步（按顺序）
 
 ```bash
-cd "/Users/huguiyuan/workspace/DSH plugin"
-npm test                          # 应当 35 通过 1 跳过（共 36）
-git log --oneline | head          # 看最近做了什么
-ls src/tools/ .dsh/skills/        # 应当是 7 个能力域 + 9 个 skill
+cd "D:\coding\Project\Workspace\dsh-lenovo-toolkit"
+npm test                          # 2026-09-14 基线：64 通过 8 跳过（共 72）
+git status --short                # 当前预约适配尚在未提交工作树中，先辨认现有改动
+git log --oneline -10             # 看最近已提交了什么
+Get-ChildItem src/tools, .dsh/skills # 应当是 7 个能力域 + 9 个 skill
 ```
 
 然后按这个顺序读：
@@ -192,7 +231,7 @@ ls src/tools/ .dsh/skills/        # 应当是 7 个能力域 + 9 个 skill
 
 | 项 | 说明 |
 |---|---|
-| Node | ≥ 20（开发机上是 v24） |
+| Node | 插件 ≥ 20；独立预约服务入口要求 Node 22+ |
 | Python | `python3`，仅趋势图渲染用，只依赖标准库；Windows 上注意执行别名问题 |
 | GitHub | 账号 `1Ecc`，SSH key 已绑定；`gh` CLI 已认证（keyring） |
 | git 身份 | 只配了**本仓库局部**身份，用 noreply 邮箱；全局 git 身份是空的 |
@@ -200,9 +239,9 @@ ls src/tools/ .dsh/skills/        # 应当是 7 个能力域 + 9 个 skill
 | 无构建步骤 | 插件是 ESM JS，改完直接生效 |
 | peer 依赖 | `@deepseek-ai/dsh-tools` 开发机上没装，所以 `collector.js` **不许** import 它，否则整个模块没法测 |
 
-⚠️ 本地目录名 `DSH plugin` 带空格且与仓库名不符。脚本里路径都做了引号处理，
-写新脚本时注意别漏引号。改本地目录名不影响 `git remote`（remote 是 SSH URL）。
-**已决定留到收尾时再改**，避免中途打断正在进行的工作。
+⚠️ 2026-09-14 的 Windows 工作树包含尚未提交的预约适配改动，以及若干未跟踪文件。
+这些改动属于当前测试工作，不要用 `git reset --hard`、`git checkout --` 或批量清理命令覆盖。
+先用 `git status --short` 和 `git diff` 辨认；尤其不要把临时测试产物和正式 Skill 资源混为一谈。
 
 ---
 
@@ -210,17 +249,19 @@ ls src/tools/ .dsh/skills/        # 应当是 7 个能力域 + 9 个 skill
 
 | # | 事项 | 为什么优先 | 阻塞 |
 |---|---|---|---|
-| 1 | **跑 `docs/verification-checklist.md`** | 发版的前置条件；schema 类问题会让**整个插件**废掉 | 需要能跑 DSH 的 Windows 环境（已确认有） |
-| 2 | **bump 到 `0.2.0` 并发 npm** | 线上包落后于仓库，市场用户拿不到新工具 | 依赖第 1 项 |
-| 3 | 把验证结果回写 `docs/progress.md` 第六章 | 那是唯一事实来源，不回写等于没验证 | 依赖第 1 项 |
-| 4 | C-4：清理 1024Store 重复条目 | 见上文，建议直接删旧条目 | 需人工审核，等维护者 |
-| 5 | C-3：提交 awesome-dsh-plugin | 权重最大的目录站；门槛已全部满足 | 无（但**是对外动作，要先确认**） |
-| 6 | CI 跑测试 | 目录站看重「活跃维护」；也能防 schema 类问题溜过 | 无 |
-| 7 | `screenshots.json` + 报告样例 | 市场详情页会展示 | 无 |
-| 8 | **埋点** | H3 假设完全没数据，四条假设里唯一零进展的 | 需定埋点方案 |
-| 9 | 本地目录改名 | 见上文，收尾时做 | 无 |
+| 1 | **修通独立 Skill 的浏览器登录与鉴权交接** | 验证码在专用调试浏览器持续失败；没有鉴权就不能验证 API 预约 | 需平台浏览器桥能力或降低专用浏览器风控特征的可靠方案 |
+| 2 | **用真实账号验证独立入口，但不要重复提交** | 当前只有旧 DSH 链路实跑一单；新入口仅离线夹具和浏览器桥单测 | 依赖第 1 项；提交超时后必须去“我的预约”核对 |
+| 3 | **跑 `docs/verification-checklist.md`** | 发版的前置条件；schema 类问题会让**整个插件**废掉 | 需要能跑 DSH 的 Windows 环境（已确认有） |
+| 4 | **bump 到 `0.2.0` 并发 npm** | 线上包落后于仓库，市场用户拿不到新工具 | 依赖第 3 项 |
+| 5 | 把验证结果回写 `docs/progress.md` 第六章 | 那是唯一事实来源，不回写等于没验证 | 每次完成真实验证后立即回写 |
+| 6 | C-4：清理 1024Store 重复条目 | 见上文，建议直接删旧条目 | 需人工审核，等维护者 |
+| 7 | C-3：提交 awesome-dsh-plugin | 权重最大的目录站；门槛已全部满足 | 无（但**是对外动作，要先确认**） |
+| 8 | CI 跑测试 | 目录站看重「活跃维护」；也能防 schema 类问题溜过 | 无 |
+| 9 | `screenshots.json` + 报告样例 | 市场详情页会展示 | 无 |
+| 10 | **埋点** | H3 假设完全没数据，四条假设里唯一零进展的 | 需定埋点方案 |
 
-第 1、2、3 项是一条链：**没验证就别发版，发了版就要回写**。
+第 1、2 项是独立预约入口的验证链；第 3、4、5 项是插件发布链：
+**没验证就别发版，完成验证就要回写。**
 
 ---
 
@@ -245,7 +286,8 @@ ls src/tools/ .dsh/skills/        # 应当是 7 个能力域 + 9 个 skill
 - **不要在跑完验证清单前发 npm 版本。**
 - **不要在四份文档里各存一份验证状态。** 唯一事实来源是 `docs/progress.md` 第六章，
   其余一律指过去。这个坑已经踩过一次，代价是四份文档互相矛盾。
-- **不要直接改 `.claude/skills/`** —— 那是派生副本，改 `.dsh/skills/` 再 `npm run sync-skill`。
+- **不要直接改电池 skill 的 `.dsh` / `.claude` 副本** —— 唯一事实源是
+  `.codex/skills/battery-health-check/`；其他 skill 仍改 `.dsh/skills/`，再运行同步。
 - **不要在工具 schema 里写 `required: false`，也不要漏 `additionalProperties`。**
   会让整个插件加载失败。守卫测试会拦，但要知道为什么。
 - **不要在 `collector.js` 里 import `@deepseek-ai/*`。** 那是 peer 依赖，
@@ -264,7 +306,7 @@ git rev-list --count HEAD
 ls src/tools/ .dsh/skills/
 npm test
 
-# 能力域与工具数是否对得上（应当是 7 组 24 个，无重名）
+# 能力域与工具数是否对得上（应当是 7 组 23 个，无重名）
 node -e "
 const fs=require('fs');let all=[];
 for(const g of fs.readdirSync('src/tools').sort()){

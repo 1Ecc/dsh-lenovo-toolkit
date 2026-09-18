@@ -2,9 +2,8 @@
 #
 # 提交前请对照 docs/marketplace-listing.md 的 C-3 清单确认门槛已达成，然后：
 #   1. fork awesome-dsh-plugin/awesome-dsh-plugin
-#   2. 把本文件复制为 data/plugins/1Ecc__dsh-plugin.yml（去掉本段注释）
-#   3. npm ci && node scripts/generate-readme.mjs
-#   4. 连同重新生成的两个 README 一起提交（不要手工编辑 README）
+#   2. 把本文件复制为 data/plugins/1Ecc__dsh-lenovo-toolkit.yml（去掉本段注释）
+#   3. 只提交这一份 YAML；README 会在合并后自动生成
 #
 # 描述会被维护者对着代码核对，改功能后必须同步更新这里。
 #
@@ -14,5 +13,5 @@ url: https://github.com/1Ecc/dsh-lenovo-toolkit
 name: 1Ecc/dsh-lenovo-toolkit
 category: tools
 description:
-  en: "Battery health diagnostics for macOS and Windows. Reports design capacity, current full-charge capacity, cycle count and two health figures (the OS-reported percentage and the gas-gauge full-charge/design ratio), renders an SVG capacity-decay chart, and saves the operating system's own battery report. Registers three tools: battery_health_collect, battery_health_trend and battery_health_rules."
-  zh: "macOS 与 Windows 的电池健康检测。输出设计容量、当前满充容量、循环次数，以及系统口径和电量计实测（满充/设计）两个健康度数值，渲染 SVG 容量衰减趋势图，并保存操作系统自带的电池报告。注册三个工具：battery_health_collect、battery_health_trend、battery_health_rules。"
+  en: "Lenovo laptop diagnostics for DSH: battery health on macOS and Windows, plus Windows device, performance, storage, app and Wi-Fi checks, user-confirmed maintenance actions, and battery warranty, parts, store and appointment helpers."
+  zh: "面向 DSH 的联想笔记本诊断工具集：支持 macOS 与 Windows 电池健康检测，以及 Windows 设备、性能、存储、应用和 Wi-Fi 检查、需用户确认的维护操作，并提供电池保修、备件、门店与预约辅助。"

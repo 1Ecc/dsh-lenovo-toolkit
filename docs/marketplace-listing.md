@@ -82,9 +82,9 @@ Settings 里浏览安装其他插件。它不是 DSH 的内置功能。
 |---|---|---|---|
 | 提交到 | `imsai-sh/awesome-deepseek-harness-plugins` | `awesome-dsh-plugin/awesome-dsh-plugin` | 无需提交 |
 | 站点 | deepseek1024.com | awesome-dsh-plugin.com | — |
-| 提交物 | 1 个 `catalog/plugins/*.json` | 1 个 `data/plugins/*.yml` + 重新生成 README | 打 topic |
+| 提交物 | 1 个 `catalog/plugins/*.json` | 1 个 `data/plugins/*.yml`（README 合并后自动生成） | 打 topic |
 | **需要 `dsh.bundle`** | ✅ | ✅ | ❌ |
-| 仓库年龄门槛 | 无 | **≥1 天 且 ≥10 提交** | 无 |
+| 仓库年龄门槛 | 无 | **≥1 天；已取消提交数门槛** | 无 |
 | 人工审核 | ❌ 静态检查过即自动 squash merge | ✅ 维护者读源码核对描述 | ❌ |
 | 单 PR 上限 | 1 条（走自动通道） | 3 条 | — |
 | npm 包 | 可选，不发则 browse-only | 可选，不影响收录 | 不需要 |
@@ -132,8 +132,8 @@ description:
 ```
 
 - 只有 `description.en` 必填，中文缺了维护者会补。
-- 提交后要本地跑 `npm ci && node scripts/generate-readme.mjs` 重新生成两个 README，
-  连同 yml 一起提交。**不要手工编辑 README。**
+- 投稿只需新增自己的 yml。两个 README 会在合并后自动生成，**不要手工编辑 README**；
+  本地运行生成器只用于预览，提交生成结果也可接受但不是必需。
 - 可用 category：`agi ui usage theme model identity session memory tools browser
   vision voice docs skill workflow git notify dev security remote market fun`
 - **描述必须属实。** 原文：「写「46 个工具、六大领域」，就应该真有 46 个工具和六个领域」。
@@ -210,21 +210,18 @@ DSH 文档明确：含冒号、括号、逗号的值不加引号会导致 YAML �
 | B | 做成 bundle 插件 | — | ✅ 已完成，8 测试通过 |
 | C-1 | 打 `dsh-plugin` topic | ③ + 一批自动聚合站 | ✅ 已完成 2026-08-28 |
 | C-2 | PR 到 1024Store 目录仓 | ① | ✅ [PR #263](https://github.com/imsai-sh/awesome-deepseek-harness-plugins/pull/263) 已自动合并 |
-| C-3 | PR 到 awesome-dsh-plugin | ② | ⏳ 等门槛，见下 |
+| C-3 | PR 到 awesome-dsh-plugin | ② | ⏳ 仓库已达门槛，待提交 |
 | C-4 | 更新 1024Store 条目（仓库已改名） | ① | ⏳ 需人工审核，见已知坑第 5 条 |
 
 **为什么 C-2 排在 C-3 前面**：C-2 无年龄门槛且自动合并，是最快能拿到「正式收录」
-反馈的渠道，可以先用它验证 `dsh.bundle` 声明是否被 CI 接受。C-3 权重最大但要等提交数。
+反馈的渠道，可以先用它验证 `dsh.bundle` 声明是否被 CI 接受。C-3 权重最大，当前已可提交。
 
-### C-3 待办：等门槛，不要凑提交
+### C-3 待办：提交收录 PR
 
-`awesome-dsh-plugin` 要求仓库**创建满 1 天且提交数 ≥ 10**。这是 CI 自动卡的。
+当前贡献指南要求仓库**创建满 1 天**，并明确说明提交数门槛已取消（见上游 #4196）。
+本仓库已满足年龄、`dsh.bundle`、真实代码和 `dsh-plugin` topic 等前置条件。
 
-**不要为了凑数造提交。** 那个门槛存在的目的正是过滤「临时攒出来的仓库」，
-用空提交绕过它，恰好证明了自己就是它要拦的那类。而且维护者合并前会实际读仓库，
-一串无意义的提交只会让人对整个投稿起疑。
-
-接下来这些都是真实要做的工作，自然就够 10 个了：
+下面仍是值得继续做的真实工作，但不再是收录门槛：
 
 | 待办 | 价值 |
 |---|---|
@@ -241,8 +238,7 @@ DSH 文档明确：含冒号、括号、逗号的值不加引号会导致 YAML �
 **门槛自查：**
 
 ```bash
-echo "提交数: $(git rev-list --count HEAD) / 10"
-gh repo view 1Ecc/dsh-plugin --json createdAt --jq '"创建于: \(.createdAt)"'
+gh repo view 1Ecc/dsh-lenovo-toolkit --json createdAt,repositoryTopics --jq '{createdAt, topics: [.repositoryTopics[].name]}'
 ```
 
 ---
@@ -281,9 +277,8 @@ gh repo view 1Ecc/dsh-plugin --json createdAt --jq '"创建于: \(.createdAt)"'
 
 - [ ] 上面 C-2 的全部前置条件
 - [ ] 仓库创建满 1 天
-- [ ] 提交数 ≥ 10
-- [ ] 加 `data/plugins/1Ecc__dsh-plugin.yml`
-- [ ] `npm ci && node scripts/generate-readme.mjs` 重新生成两个 README 并一起提交
+- [ ] 加 `data/plugins/1Ecc__dsh-lenovo-toolkit.yml`
+- [ ] PR 只新增自己的 yml；不手工编辑生成的 README
 - [ ] category 选 `skill` 或 `tools`
 - [ ] 描述里的每个具体声明（工具数量、命令名）都能在代码里对上
 

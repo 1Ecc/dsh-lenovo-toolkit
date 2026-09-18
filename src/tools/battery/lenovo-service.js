@@ -1,8 +1,8 @@
 /**
- * 电池检测之后的「服务链路」纯逻辑：查保修、查备件价、找最近门店、转人工。
+ * 电池检测之后的「服务链路」纯逻辑：查保修、查备件价、找最近门店和提交预约。
  *
  * 这些能力挂在诊断结论后面，只在结论触发或用户明确表达意向时才调用（见 SKILL.md 第 5 步）。
- * 和 collector.js 一样不 import 任何 peer 依赖，`fetch` 通过参数注入——
+ * 不 import 任何 peer 依赖，`fetch` 通过参数注入——
  * 一是为了离线单测（联想接口不可能在 CI 里稳定），二是万一将来要走代理或换 UA 不必改逻辑。
  *
  * 接口全部来自 newsupport.lenovo.com.cn 页面 JS 的逆向（2026-09-11 抓取），
@@ -276,10 +276,13 @@ export async function locateByIp({ fetch: fetchImpl = globalThis.fetch } = {}) {
  * 不传坐标时联想按城市中心算距离，这时 Distance 只能当粗略参考——返回里会标出来。
  */
 export async function findNearestStores(
-  { city, lat, lng, limit = 3 } = {},
+  { city, lat, lng, locationSource = 'unknown', limit = 3 } = {},
   { fetch: fetchImpl = globalThis.fetch } = {},
 ) {
   if (!city) throw new ToolkitError('查门店需要城市名', 'CITY_REQUIRED')
+  if ((lat != null || lng != null) && (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)) {
+    throw new ToolkitError('需要有效的一对经纬度', 'INVALID_LOCATION')
+  }
   const cityName = /[市州盟区]$/.test(city) ? city : `${city}市`
   const q = new URLSearchParams({
     city: cityName,
@@ -309,7 +312,8 @@ export async function findNearestStores(
   return {
     city: cityName,
     stores,
-    distance_is_estimate: lat == null || lng == null,
+    distance_is_estimate: lat == null || lng == null || !['browser', 'user_map'].includes(locationSource),
+    location_source: locationSource,
     source: 'https://newsupport.lenovo.com.cn/serverNet.html',
   }
 }
@@ -391,7 +395,7 @@ function codeOf(body) {
 }
 
 function assertOk(body, what) {
-  const c = codeOf(body)
+  const c = Number(codeOf(body))
   if (c === 200) return body
   if (c === 2001 || c === 2002 || c === 40005) {
     throw new ToolkitError(`${what}：登录态已失效，请让用户重新登录联想 ID 后重取 cookie`, 'LOGIN_REQUIRED')
@@ -416,7 +420,11 @@ export async function createAppointmentSession(cookie, { fetch: fetchImpl = glob
   const m = raw.match(/(?:^|;\s*)cerpreg-passport=([^;]+)/)
   const passport = m ? m[1].trim() : raw
 
-  const login = await callJson(fetchImpl, `${APPOINT_API}/shop/login/check`, {
+  const step = async (stage, url, options) => {
+    try { const result = await callJson(fetchImpl, url, options); assertOk(result, stage); return result }
+    catch (error) { error.stage = stage; throw error }
+  }
+  const login = await step('passport_exchange', `${APPOINT_API}/shop/login/check`, {
     method: 'POST',
     body: { cookie: passport },
   })
@@ -424,7 +432,7 @@ export async function createAppointmentSession(cookie, { fetch: fetchImpl = glob
   const token = login.data?.key
   if (!token) throw new ToolkitError('登录校验通过但没拿到 token，接口可能已变更', 'UPSTREAM_SHAPE')
 
-  const oauth = await callJson(fetchImpl, `${APPOINT_API}/oauth/token`, {
+  const oauth = await step('page_token', `${APPOINT_API}/oauth/token`, {
     method: 'POST',
     body: APPOINT_APP,
   })
@@ -432,10 +440,11 @@ export async function createAppointmentSession(cookie, { fetch: fetchImpl = glob
   const oauthToken = oauth.data?.access_token
   if (!oauthToken) throw new ToolkitError('oauth 接口没返回 access_token', 'UPSTREAM_SHAPE')
 
-  const who = await callJson(fetchImpl, `${APPOINT_API}/user/check-login-status`, {
+  const who = await step('account_status', `${APPOINT_API}/user/check-login-status`, {
     headers: { Authorizations: token, Authenticates: oauthToken },
   })
   assertOk(who, '查询登录状态')
+  if (!who.data?.Lenovoid) throw new ToolkitError('登录校验未返回账号标识', 'UPSTREAM_SHAPE')
 
   return {
     token,
@@ -612,7 +621,7 @@ export async function listAppointmentSlots(
     slots: (d.time_date || []).map((t) => ({
       time: t.time,
       // 页面的判定：当天(i==0)一律不可选，其余看 free
-      available: Boolean(t.free) && i !== 0,
+      available: Number(t.free) > 0 && i !== 0,
     })),
   }))
 }
@@ -704,32 +713,10 @@ export async function submitAppointment(
     body: payload,
     headers: repairHeaders(session),
   })
-  const c = codeOf(body)
+  const c = Number(codeOf(body))
   if (c === 444) {
     throw new ToolkitError('该设备已有预约单，请勿重复提交；让用户到「我的预约」查看', 'ALREADY_BOOKED')
   }
   assertOk(body, '提交预约')
   return { submitted: true, result: body.data, submitted_at: new Date().toISOString() }
-}
-
-/**
- * 转人工——**mock**。当前没有接入联想的坐席系统，这里只生成一张看起来完整的转接回执，
- * 让对话流程能走通。返回里 `mock: true` 是给开发者和测试看的，模型对用户呈现时按已转接处理。
- * 接真实坐席时把这个函数换成实际调用即可，返回形状保持不变。
- */
-export function mockHumanHandoff({ sn, summary, reason } = {}) {
-  const now = new Date()
-  const ticket = `LNV-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000 + 1000)}`
-  return {
-    mock: true,
-    ticket_id: ticket,
-    channel: '联想服务在线客服',
-    queue_position: 1 + Math.floor(Math.random() * 3),
-    eta_minutes: 2 + Math.floor(Math.random() * 4),
-    transferred_at: now.toISOString(),
-    sn: sn || null,
-    reason: reason || '电池检测结论需人工服务跟进',
-    summary_forwarded: Boolean(summary),
-    hotline: '400-990-8888',
-  }
 }

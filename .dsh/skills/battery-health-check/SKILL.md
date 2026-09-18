@@ -8,82 +8,54 @@ disable-model-invocation: false
 
 # 电池健康度检测
 
-## 这个 skill 交付什么
+一次完整的电池体检，交付四样东西：**一份 Markdown 报告**（回复正文）、**一张容量衰减趋势图**（SVG）、
+**一份系统官方电池报告**（原始数据），以及**按触发条件出现的服务推荐**（查保修、报备件价、预约门店或转人工）。
 
-一次完整的电池体检，四份东西：
-
-1. **一份 Markdown 报告**（回复正文）：健康概览 → 解读 → 小建议
-2. **一张容量衰减趋势图**（SVG，浏览器可直接打开）
-3. **一份系统官方电池报告**（原始数据，可存档、可发给服务网点）
-4. **按需的服务推荐**（有明确触发条件，见第 5 步）：查保修、报原厂电池备件价、找最近门店，
-   然后帮用户预约到店/上门更换原厂电池，或转人工
-
-面对的场景是联想服务团队的一线咨询：报告要让顾问照着能讲、让客户听得懂并且相信。
-所以**数据必须真实、口径必须说清、推荐必须克制**。
+场景是联想服务团队的一线咨询：报告要让顾问照着能讲、让客户听得懂并且相信。
+**数据必须真实、口径必须说清、推荐必须克制。**
 
 ---
 
-## 执行流程
+## 第 1 步：采集 + 趋势图 + 判读（一条命令）
 
-### 第 1 步：采集
-
-先判断平台（`uname -s` 或看环境），然后执行对应脚本。**不要自己手敲 ioreg/powercfg 命令去凑数据**——
-脚本已经处理了一堆平台坑（见 `references/platform-notes.md`），手敲会踩回去。
-
-**macOS：**
-
-```bash
-bash <skill_dir>/scripts/collect_macos.sh --outdir ~/Documents/battery-health-$(date +%Y%m%d-%H%M%S)
-```
-
-**Windows：**
+**不要自己手敲 ioreg/powercfg 凑数据**，脚本已经处理了平台坑。
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File <skill_dir>\scripts\collect_windows.ps1
+# Windows
+powershell -NoProfile -ExecutionPolicy Bypass -File <skill_dir>\scripts\collect_windows.ps1 -Render
 ```
-
-脚本会把 `KEY=VALUE` 指标打到 stdout（同时存一份 `metrics.env`），并在输出目录里生成
-官方电池报告和 `history.tsv`。记下 `outdir`，后面都用它。
-
-**退出码 2** 表示没检测到电池（台式机、电池已拆除）。这种情况直接如实告诉用户，不要继续往下走。
-
-### 第 2 步：画趋势图
 
 ```bash
-python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out <outdir>/battery-trend.svg
+# macOS
+bash <skill_dir>/scripts/collect_macos.sh --render
 ```
 
-脚本自己决定用日期轴还是循环次数轴，也自己处理"只有一个实测点"的情况——
-这时它会画成**推算区间**而不是一条看着很确定的线。报告里的措辞要和图一致：
-图上写的是区间，正文就不能只报一个确定数字。
+stdout 是三段 `KEY=VALUE`：**指标**（`metrics.env`）→ `trend_svg=` 趋势图路径 → **判读字段**（`assessment.env`，
+`health_grade`、`cycle_grade`、`decay_multiplier`、`trend_mode`、`eta_80pct`、`abnormal_signals`、`conclusion_tier`、
+`service_trigger_result` 等）。记下 `outdir`。
 
-**这张图要在对话里直接渲染出来，放在「一、电池健康概览」的表格正下方**，不要只丢一个
-文件路径让用户自己去开——他多半不会开，那这张图就白画了。`battery_health_trend` 会把 SVG
-内容直接当图片返回；如果宿主有文件渲染能力（比如 `SendUserFile` 的 `display: render`），
-也用上。文件仍然照写，存档和发给服务网点时还用得上，路径放到「四、附件」里。
+- **退出码 2** = 没检测到电池（台式机 / 电池已拆）。如实告诉用户，到此为止。
+- 打印了 `assessment_skipped=python_missing` = 没有 Python。趋势图和判读字段缺失：报告里说明趋势图未生成，
+  判读改读 `references/interpretation-rules.md` 手算。**不要手写 SVG**，手写的图和脚本口径对不上。
 
-如果环境里没有 `python3`，跳过这一步并在报告里说明趋势图未生成，其余部分照常输出。
-不要为了补这张图去手写 SVG——手写的图和脚本的口径对不上，反而制造矛盾。
+## 第 2 步：判读
 
-### 第 3 步：判读
+**有判读字段就直接用，不要重算**——那是 `interpretation-rules.md` 的可执行版本，跨 agent 结论一致靠它。
+读 `references/interpretation.md`（短）拿到每个档位的含义和措辞要求，然后写解读。
 
-**动笔前先读 `references/interpretation.md`。** 那里面有健康度分级、循环次数分级、
-衰减速率公式、异常信号清单和综合结论四档，全部按它来判，不要凭印象给结论。
+必须注意的两件事：
+- `health_pct_os` 与 `health_pct_raw` 是两个口径（`health_diverged=true` 时差 ≥ 3 个百分点）：对客户说系统口径，
+  判级用较低者（`health_pct_judge`），并在报告里解释差异。
+- `design_cycle_count_assumed=true` 时（Windows 永远如此），报告必须写明"设计循环次数按 1000 次估算，非本机读出"。
 
-特别注意 `health_pct_os` 和 `health_pct_raw` 这两个健康度口径的区别，
-它们经常差好几个百分点（Apple Silicon 上尤其常见）。混用是这个任务最容易出的错。
+## 第 3 步：写报告
 
-平台相关的字段口径和已知坑在 `references/platform-notes.md`，遇到字段缺失、
-数值可疑、或者需要跟用户解释数据来源时去读它。
-
-### 第 4 步：写报告
-
-严格用下面的结构。这个顺序是需求方定的，不要自己调整章节。
+严格用这个结构，章节顺序是需求方定的：
 
 ```markdown
 # 电池健康检测报告
 
-**结论：<一句话，含结论档位>**
+**结论：<一句话，含 conclusion_tier>**
 
 ## 一、电池健康概览
 
@@ -97,7 +69,7 @@ python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out
 | 当前健康度 | |
 | 循环次数 | |
 
-<在这里内联渲染容量衰减趋势图，并用一句话说明图上画的是实测还是推算>
+<在这里内联渲染容量衰减趋势图，并用一句话说明图上画的是实测还是推算（看 trend_mode）>
 
 ## 二、解读
 
@@ -121,91 +93,71 @@ python3 <skill_dir>/scripts/render_trend.py --metrics <outdir>/metrics.env --out
 
 写作要求：
 
-- **概览表如实填写。** 字段取不到就写「系统未提供」，不要留空，也不要拿别的数字顶上。
-  两种健康度口径不一致时，主表填系统口径，并在括号里补一句电量计实测值。
-- **机型那一栏别把机型代码写成 MTM。** 消费线（Yoga / 小新 / 拯救者）的 WMI 只给得出 4 位
-  机型代码（如 `82TL`），完整 MTM（如 `82TL007KCD`）本地取不到。`device_mtm` 为空时就写
-  机型代码并注明完整 MTM 需联网查；查过保修之后（`battery_warranty_lookup` 的 `machine.mtm`）
-  再把完整 MTM 补上。**主机编号（`device_serial`）才是后续所有服务动作的主键，必须列出来。**
-- **解读要给因果，不要复述数字。** "循环 75 次，健康度 88%"是概览已经说过的话；
-  解读要回答的是"这个组合意味着什么、正常吗、接下来会怎样"。
-- **不确定就说不确定。** 循环次数很少、只有单个实测点、两种口径分歧大——
-  这些情况下给区间和条件，而不是给一个假装很确定的数字。虚假的确定性在服务场景里
-  会直接变成后续的投诉。
-- **"置换建议"这一节讲的是要不要换、什么时候换、换之前先做什么**，是技术判断，
-  不是商品推荐。商品链接不放这里，放第 5 步的独立小节。
+- **概览表如实填写。** 取不到写「系统未提供」，不留空、不拿别的数字顶上。口径不一致时主表填系统口径，括号补电量计实测。
+  Windows 上容量单位是 **mWh**（看 `capacity_unit`）。
+- **机型那栏别把机型代码写成 MTM。** Windows 消费线（Yoga / 小新 / 拯救者）`device_mtm` 永远为空，只有 4 位机型代码
+  （`device_machine_type`，如 `82TL`）。写机型代码并注明"完整 MTM 需联网查"；查过保修后用 `machine.mtm` 补上。
+  **主机编号（`device_serial`）是后续所有服务动作的主键，必须列出。**
+- **趋势图要在对话里直接渲染**，放在概览表正下方；宿主不支持内联时给绝对路径。文件照写，存档和发门店都用得上。
+- **解读给因果，不复述数字。** "循环 140 次、健康度 86.7%"概览已经说过；解读回答"这个组合意味着什么、正常吗、接下来会怎样"。
+- **不确定就说不确定。** `decay_multiplier_reliable=false`、`trend_mode=single_point_projection`、`health_diverged=true`
+  时给区间和条件，不给假装确定的数字。
+- **「置换建议」讲要不要换、什么时候换、换前先做什么**，是技术判断；商品和预约不放这里。
 
-### 第 5 步：判断要不要推荐
+## 第 4 步：服务推荐（有触发条件）
 
-**读 `references/lenovo-offers.md`**，按里面的触发条件判断。触发条件只有两类，命中任一即可：
+触发条件两类，命中任一：
 
-- 结论触发：健康度 < 80%、结论为建议更换/需要送修、循环数到寿命；
-- 意图触发：用户明确表达了换电池/续航/保修方面的意向（可跨轮生效）。
+- **结果触发**：`service_trigger_result=true`（等价于健康度 < 80%、结论为建议更换/需要送修、循环数到寿命）。
+- **意图触发**：用户明确表达换电池 / 续航不行 / 问保修 / 问价格 / 问门店的意向，**可跨轮生效**。
+  非首轮意图触发不重做检测，直接衔接。
 
-**未触发就整节省略**，报告到「附件」为止干净收尾，不要留"如有需要可以…"这类悬着的尾巴。
+「可以开始关注」档**不触发**，只在置换建议里写下次复检时间。**未触发就整节省略**，报告到「附件」干净收尾，
+不留"如有需要可以…"的尾巴。
 
-触发后**不推商品**，走一条固定主线——**建议尽快预约到店/上门更换原厂电池**：
+触发后**不推商品**，走固定主线——建议尽快预约到店/上门更换原厂电池。操作全部按
+`references/standalone-service.md`（唯一操作手册）执行，概括是：
 
-1. 告诉用户要把主机编号（`metrics.env` 的 `device_serial`）发给联想官方接口，**得到同意后**
-   调 `battery_warranty_lookup` 查保修 → 电池在保 / 保外 / 不确定（`battery_covered` 为 null
-   时如实说不确定，让门店核定）；
-2. 调 `battery_part_price_lookup` 查原厂电池备件价，保外时报给用户；联想没公示就引导打热线，不估价；
-3. 调 `battery_service_stores` 找最近门店（先按 IP 定位城市，**把定位到的城市说出来让用户确认**）；
-4. 把以上三项写进报告最后的「服务推荐」节（格式见 `lenovo-offers.md`），然后给用户两条路：
-   - **预约到店/上门**：需要用户自己登录联想 ID——用 `open_url` 拉起
-     `https://serviceorder.lenovo.com.cn/h5/#/serviceOrderPC/selectService`，等用户说登好了，
-     取 `cerpreg-passport` cookie，然后 `battery_appointment_start` →
-     `battery_appointment_options` → `battery_appointment_submit`。
-     服务类别=维修服务、故障类型=其他、故障描述用 `fault_description`（≤100 字）、
-     **可选时段列给用户挑、联系人和手机号向用户要**、复述整单确认后才提交，最后反馈工单号。
-     **绝不代用户登录，绝不读浏览器 cookie 库**；拿不到 cookie 就退回引导用户自己提交。
-     详见 `references/service-flow.md` 第 4 节。
-   - **转人工**：调 `battery_service_handoff`，把回执（工单号、排队位置、预计等待）告诉用户。
+1. `node <skill_dir>/scripts/service.mjs quote --sn <device_serial>` → 保修状态 + 原厂备件价；
+   `... stores` 自动定位成功则一并拿到最近门店。
+2. 按 `references/lenovo-offers.md` 的格式写「服务推荐」节，让用户二选一：**预约门店** / **联系人工 `400-990-8888`**
+   （当前没有坐席接口，不能宣称已转接或编造工单号）。
+3. 用户选预约后：`stores → login --stationCode → auth → prepare → 用户确认 → submit --draft_id --confirmed → close`。
+   每步一条命令，状态自动跨命令保存，没有会话要维护。
+   用户本人在专用浏览器登录，agent 永远不代填账号、密码、验证码；复述整单并取得明确确认后才提交。
 
-非联想设备：保修/备件价接口查不到是正常的，不要反复试；门店查询可用但受理与否以门店为准，不推预约。
+服务入口需要 **Node 22+**；脚本自己检查，只有报 `NODE_TOO_OLD` 时才把 `message` 里的安装命令交给用户，装完重跑。
 
-接口细节、字段含义、登录态处理和兜底见 `references/service-flow.md`；用 `battery_health_rules`
-取 `service` 也能拿到同一份。
+非联想设备：保修/备件价查不到是正常的，不要重试；门店可查但受理与否以门店为准，不推预约。
 
-### 第 6 步：交付文件
+## 第 5 步：交付文件
 
-报告正文直接输出。趋势图和官方报告用文件发送能力交给用户（有 `SendUserFile` 就用它，
-趋势图设为 `render` 让用户直接看到），没有就把绝对路径写清楚。
+报告正文直接输出。宿主支持文件发送/渲染时直接交付趋势图和官方报告；不支持时把绝对路径写清楚。
 
 ---
 
-## 目录结构
+## 目录与阅读顺序
 
 ```
 battery-health-check/
-├── SKILL.md                        本文件：流程与报告格式
+├── SKILL.md                         流程与报告格式（本文件）
 ├── scripts/
-│   ├── collect_macos.sh            macOS 采集（零依赖，只用系统自带命令）
-│   ├── collect_windows.ps1         Windows 采集（powercfg + WMI）
-│   └── render_trend.py             趋势图渲染（只用标准库）
+│   ├── collect_windows.ps1          Windows 采集（-Render 一并出图与判读）
+│   ├── collect_macos.sh             macOS 采集（--render 同上）
+│   ├── render_trend.py              趋势图 + 判读字段（只用标准库）
+│   ├── service.mjs                  服务入口：node service.mjs <action> --key value；--stdio 为 JSONL 长驻模式
+│   └── service-lib/                 联想接口、浏览器桥接、位置、状态文件、Node 版本检查
 └── references/
-    ├── interpretation.md           判读规则：分级、速率公式、异常信号、结论四档
-    ├── lenovo-offers.md            推荐策略：纪律、触发条件、主线顺序、输出格式
-    ├── service-flow.md             服务链路：保修/备件价/门店接口、预约填单流程、转人工
-    └── platform-notes.md           平台数据源、字段口径、已知坑
+    ├── interpretation.md            档位含义、措辞要求、建议素材库（写报告前读）
+    ├── interpretation-rules.md      判读公式与阈值（只在没有判读字段时读）
+    ├── lenovo-offers.md             推荐纪律、触发条件、输出格式（触发后读）
+    ├── standalone-service.md        服务操作手册：命令、动作速查、降级、排错（触发后读）
+    ├── service-flow.md              联想接口背景与字段含义（非必读，出错或字段疑问时查）
+    └── platform-notes.md            平台数据源与已知坑（非必读，字段可疑或要解释来源时查）
 ```
-
-**什么时候读哪个：**
-
-| 场景 | 读这个 |
-|---|---|
-| 要下健康度/趋势结论 | `references/interpretation.md`（第 3 步必读） |
-| 要判断是否推荐、怎么推 | `references/lenovo-offers.md`（第 5 步必读） |
-| 要查保修/报价/找门店/预约/转人工 | `references/service-flow.md`（推荐触发后必读） |
-| 字段缺失、数值可疑、要解释数据来源 | `references/platform-notes.md` |
-
----
 
 ## 反复运行会越来越准
 
-采集脚本每次运行都会往 `~/.battery-health-check/history.tsv` 追加一条快照（每天最多一条）。
-macOS 上系统不保存历史容量记录，所以首次检测的趋势只能靠模型推算；
-攒够 3 个点、跨度超过两周之后，趋势图会自动切换成基于真实历史的日期轴曲线。
-
-如果用户是回访或复检，可以主动提一句这个——让他知道多测几次是有意义的，
-这本身也是把客户留在服务体系里的一个理由。
+采集脚本每次运行都往 `~/.battery-health-check/history.tsv` 追加快照（每天最多一条）。macOS 没有系统级历史容量记录，
+首次检测只能推算（`trend_mode=single_point_projection`）；攒够 3 个点、跨度超两周后自动切到真实历史曲线。
+用户是回访或复检时主动提一句——多测几次是有意义的，也是把客户留在服务体系里的理由。

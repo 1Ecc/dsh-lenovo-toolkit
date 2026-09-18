@@ -6,7 +6,7 @@
 
 | 能力域 | 工具数 | 对应 skill | 平台 | 文档 |
 |---|---|---|---|---|
-| `battery` | 10 | `battery-health-check` | macOS + Windows（服务链路 7 个工具需联网） | [battery.md](battery.md) |
+| `battery` | 9 | `battery-health-check` | macOS + Windows（服务链路 6 个工具需联网） | [battery.md](battery.md) |
 | `device` | 1 | `device-overview` | Windows | [device.md](device.md) |
 | `performance` | 2 | `performance-diagnosis` | Windows | [performance.md](performance.md) |
 | `storage` | 1 | `storage-diagnosis` | Windows | [storage.md](storage.md) |
@@ -14,7 +14,7 @@
 | `wifi` | 5 | `wifi-diagnosis`、`wifi-health-report` | Windows | [wifi.md](wifi.md) |
 | `actions` | 4 | 无专属 skill，被各 skill 复用 | Windows | [actions.md](actions.md) |
 
-共 **24 个 DSH 工具**。另有两个不带工具的 skill：`service-recommendation`（纯推荐纪律）
+共 **23 个 DSH 工具**。另有两个不带工具的 skill：`service-recommendation`（纯推荐纪律）
 和 `xiangbangbang-device-assistant`（总路由）。
 
 `actions` 是唯一不对应单个诉求的能力域：它是「需逐次确认的低风险操作」的统一出口，

@@ -1,8 +1,9 @@
 /**
  * 仓库一致性守卫。
  *
- * 这个仓库有两处「同一份内容存在于两个位置」的结构，都是被外部工具的路径约定逼出来的：
- *   - skill 文件：DSH 扫 .dsh/skills/，Claude Code 扫 .claude/skills/
+ * 这个仓库有两类「同一份内容存在于多个位置」的结构，都是被外部工具的路径约定逼出来的：
+ *   - 电池 skill：.codex 是事实源，DSH 扫 .dsh/skills/，Claude Code 扫 .claude/skills/
+ *   - 其他 skill：.dsh 是事实源，Claude Code 扫 .claude/skills/
  *   - agent 说明：AGENTS.md 是通行约定，CLAUDE.md 是 Claude Code 读的
  *
  * 两者的处理方式不同，原因也不同：
@@ -16,7 +17,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
-import { join, relative, resolve, dirname } from 'node:path'
+import { join, relative, resolve, dirname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -56,21 +57,39 @@ test('AGENTS.md 必须存在且是实际内容', () => {
   )
 })
 
-test('.claude/skills 必须与 .dsh/skills 完全一致（漂移了就跑 npm run sync-skill）', () => {
-  const src = join(ROOT, '.dsh', 'skills')
-  const dst = join(ROOT, '.claude', 'skills')
-  assert.ok(existsSync(src), '.dsh/skills 应当存在（它是唯一事实来源）')
-  assert.ok(existsSync(dst), '.claude/skills 应当存在')
+test('电池 skill 从 .codex 向外同步，其他 skill 从 .dsh 向 .claude 同步', () => {
+  const codexBattery = join(ROOT, '.codex', 'skills', 'battery-health-check')
+  const dsh = join(ROOT, '.dsh', 'skills')
+  const claude = join(ROOT, '.claude', 'skills')
+  assert.ok(existsSync(codexBattery), '.codex/skills/battery-health-check 应当存在（它是电池 skill 唯一事实来源）')
+  assert.ok(existsSync(dsh), '.dsh/skills 应当存在')
+  assert.ok(existsSync(claude), '.claude/skills 应当存在')
 
-  const a = walk(src)
-  const b = walk(dst)
-  assert.deepEqual(b, a, '两处的文件清单不一致，跑 npm run sync-skill')
-
-  for (const rel of a) {
-    const x = readFileSync(join(src, rel))
-    const y = readFileSync(join(dst, rel))
-    assert.ok(x.equals(y), `${rel} 内容不一致，跑 npm run sync-skill（请改 .dsh/ 那份）`)
+  const batteryFiles = walk(codexBattery)
+  for (const destination of [join(dsh, 'battery-health-check'), join(claude, 'battery-health-check')]) {
+    assert.deepEqual(walk(destination), batteryFiles, `${relative(ROOT, destination)} 文件清单与 .codex 源不一致，跑 npm run sync-skill`)
+    for (const rel of batteryFiles) {
+      assert.ok(
+        readFileSync(join(codexBattery, rel)).equals(readFileSync(join(destination, rel))),
+        `${relative(ROOT, destination)}${sep}${rel} 与 .codex 源不一致，跑 npm run sync-skill`,
+      )
+    }
   }
+
+  const withoutBattery = files => files.filter(rel => !rel.startsWith(`battery-health-check${sep}`))
+  const dshFiles = withoutBattery(walk(dsh))
+  const claudeFiles = withoutBattery(walk(claude))
+  assert.deepEqual(claudeFiles, dshFiles, '非电池 skill 的文件清单不一致，跑 npm run sync-skill')
+  for (const rel of dshFiles) {
+    assert.ok(readFileSync(join(dsh, rel)).equals(readFileSync(join(claude, rel))), `${rel} 内容不一致，跑 npm run sync-skill（请改 .dsh/ 那份）`)
+  }
+})
+
+test('同步脚本不得生成或覆盖 .codex 电池事实源', () => {
+  const source = readFileSync(join(ROOT, 'scripts', 'sync-skill.mjs'), 'utf8')
+  assert.match(source, /batterySource\s*=\s*new URL\(['"]\.codex\/skills\/battery-health-check\//)
+  assert.doesNotMatch(source, /import\s+['"]\.\/bundle-battery-service\.mjs['"]/)
+  assert.doesNotMatch(source, /await cp\([^\n]*\.codex\/skills\/battery-health-check/)
 })
 
 test('每个 skill 的 frontmatter 都要加引号，否则 DSH 会静默拒绝', () => {
@@ -185,7 +204,7 @@ test('每个能力域都要带齐 collector / register / 文档 / 测试，并�
  * 这里不写死总数会更"灵活"，但也就守不住"迁移时漏掉一个工具"这类问题——
  * 所以刻意写死，改动工具数时必须同步改这里，逼人确认这是有意为之。
  */
-test('全仓库共注册 24 个工具，名字不得重复', () => {
+test('全仓库共注册 23 个工具，名字不得重复', () => {
   const toolsRoot = join(ROOT, 'src', 'tools')
   const source = walk(toolsRoot)
     .filter((p) => p.endsWith('register.js'))
@@ -193,7 +212,7 @@ test('全仓库共注册 24 个工具，名字不得重复', () => {
     .join('\n')
 
   const names = [...source.matchAll(/name:\s*'([^']+)'/g)].map((m) => m[1])
-  assert.equal(names.length, 24, '工具总数变了；确认是有意的再改这个数字')
+  assert.equal(names.length, 23, '工具总数变了；确认是有意的再改这个数字')
   assert.equal(new Set(names).size, names.length, '有重名工具，后注册的会覆盖先注册的')
 })
 

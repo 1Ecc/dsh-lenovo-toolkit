@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-容量衰减趋势图渲染器（输出 SVG，浏览器直接打开）
+容量衰减趋势图渲染器（输出 SVG，浏览器直接打开）+ 判读字段
 
 用法：
-  python3 render_trend.py --metrics <metrics.env> [--history <history.tsv>] --out <trend.svg>
+  python render_trend.py --metrics <metrics.env> [--history <history.tsv>] --out <trend.svg> [--assessment <assessment.env>]
+
+stdout 是 KEY=VALUE：第一行 trend_svg=<路径>，随后是 assess() 算出的判读字段
+（健康度档位、循环比、衰减倍率、趋势模式、80% 触及点、异常信号、结论四档、是否触发服务推荐），
+同时写到 metrics.env 同目录的 assessment.env。报告直接引用这些字段，不要自己重算。
 
 两种横轴模式，脚本自动选：
   * date   —— 历史点 >= 3 且跨度 >= 14 天时用日期轴。Windows 的 powercfg 自带数周历史，
@@ -465,22 +469,215 @@ def render(metrics, history, out_path):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(parts))
-    return out_path
+
+    # 判读需要的中间量。图和文字用同一份数字，正文才不会和图打架。
+    info = {
+        "date_mode": date_mode, "d0": usable[0]["date"] if usable else None,
+        "usable": usable, "span_days": span_days, "primary": primary,
+        "p_main": p_main, "p_alt": p_alt, "x80s": x80s, "last_x": last_x,
+        "already_below": already_below, "diverged": diverged,
+        "h_os": h_os, "h_raw": h_raw, "cycles": cycles, "design_cycles": design_cycles,
+    }
+    return out_path, info
+
+
+# ---------------------------------------------------------------- 判读
+#
+# 这里是 references/interpretation-rules.md 的可执行版本：分级阈值、速率公式、异常信号、
+# 结论四档全部照抄，改阈值请两边同步。产出 KEY=VALUE，模型直接引用，不再自己心算。
+
+HEALTH_GRADES = ((90, "优秀"), (80, "良好"), (70, "衰减明显"), (60, "建议更换"), (0, "强烈建议更换"))
+CYCLE_GRADES = ((100, "已超设计寿命"), (80, "已接近设计寿命终点"), (50, "使用较多，进入寿命中后段"), (25, "正常"), (0, "使用很轻"))
+MULTIPLIER_GRADES = ((3.0, "异常"), (2.0, "明显偏快"), (1.2, "略快于规格"), (0.0, "符合或优于规格"))
+MIN_RELIABLE_CYCLES = 50
+SNAPSHOT_DROP_PP = 5.0
+
+
+def _grade(value, table, reverse=False):
+    for threshold, label in table:
+        if (value < threshold) if reverse else (value >= threshold):
+            return label
+    return table[-1][1]
+
+
+def _fmt(v, digits=1):
+    if v is None:
+        return ""
+    return ("%%.%df" % digits) % v
+
+
+def assess(metrics, info):
+    h_os, h_raw = info["h_os"], info["h_raw"]
+    cycles = info["cycles"]
+    values = [v for v in (h_os, h_raw) if v is not None]
+    out = []
+    add = lambda k, v: out.append((k, "" if v is None else str(v)))
+
+    # ---- 健康度：两口径取低者判级，系统口径对客户陈述 ----
+    judge = min(values) if values else None
+    add("health_pct_judge", _fmt(judge))
+    add("health_grade", _grade(judge, HEALTH_GRADES) if judge is not None else "")
+    add("health_diverged", "true" if info["diverged"] else "false")
+    add("health_divergence_pp", _fmt(abs(h_os - h_raw)) if (h_os is not None and h_raw is not None) else "")
+
+    # ---- 循环次数：设计次数取不到就按 1000，必须标明是假设值 ----
+    design_raw = _num(metrics.get("design_cycle_count"))
+    assumed = (not design_raw) or metrics.get("design_cycle_count_source", "").strip() == "assumed"
+    design = info["design_cycles"]
+    add("design_cycle_count_used", "%.0f" % design)
+    add("design_cycle_count_assumed", "true" if assumed else "false")
+    ratio = (cycles * 100.0 / design) if (cycles and design) else None
+    add("cycle_ratio_pct", _fmt(ratio))
+    add("cycle_grade", _grade(ratio, CYCLE_GRADES) if ratio is not None else "循环次数未提供")
+
+    # ---- 衰减速率：(100-健康度)/循环 ÷ 20/设计循环 ----
+    reliable = bool(cycles) and cycles >= MIN_RELIABLE_CYCLES
+    spec_rate = 20.0 / design if design else None
+    mults = {}
+    for key, h in (("os", h_os), ("raw", h_raw)):
+        if h is not None and cycles and spec_rate:
+            mults[key] = ((100.0 - h) / cycles) / spec_rate
+    worst = max(mults.values()) if mults else None
+    # 循环数 < 50 时分母太小，倍率会被测量误差放大到吓人；这时干脆不给数，免得被引用。
+    if worst is not None and reliable:
+        add("decay_rate_pp_per_cycle", _fmt((100.0 - judge) / cycles, 3))
+        add("spec_rate_pp_per_cycle", _fmt(spec_rate, 3))
+        add("decay_multiplier", _fmt(worst, 2))
+        add("decay_multiplier_range", "%s~%s" % (_fmt(min(mults.values()), 2), _fmt(max(mults.values()), 2)) if (info["diverged"] and len(mults) == 2) else "")
+        add("decay_multiplier_grade", _grade(worst, MULTIPLIER_GRADES))
+        add("decay_multiplier_reliable", "true")
+    else:
+        for key in ("decay_rate_pp_per_cycle", "spec_rate_pp_per_cycle", "decay_multiplier", "decay_multiplier_range", "decay_multiplier_grade"):
+            add(key, "")
+        add("decay_multiplier_reliable", "false")
+
+    # ---- 趋势：和图上画的一致 ----
+    usable = info["usable"]
+    if info["date_mode"]:
+        mode = "history_date"
+    elif len(usable) >= 2:
+        mode = "history_cycles"
+    else:
+        mode = "single_point_projection"
+    add("trend_mode", mode)
+    add("history_points_used", str(len(usable)))
+    add("history_span_days", str(info["span_days"]))
+    first = usable[0] if usable else None
+    last = usable[-1] if usable else None
+    first_h = (first["health_os"] if first["health_os"] is not None else first["health_raw"]) if first else None
+    last_h = (last["health_os"] if last["health_os"] is not None else last["health_raw"]) if last else None
+    add("health_first", _fmt(first_h))
+    add("health_first_date", first["date"].isoformat() if first else "")
+    add("health_delta_pp", _fmt(last_h - first_h) if (first_h is not None and last_h is not None and len(usable) >= 2) else "")
+    yearly = None
+    if info["date_mode"] and info["p_main"] and info["span_days"] >= 90:
+        yearly = -info["p_main"][1] * 365.25
+    add("yearly_decay_pp", _fmt(yearly))
+
+    eta = ""
+    x80s = info["x80s"]
+    if info["already_below"]:
+        eta = "already_below"
+    elif x80s:
+        if info["date_mode"]:
+            fmt = lambda v: (info["d0"] + dt.timedelta(days=int(round(v)))).strftime("%Y-%m")
+        else:
+            fmt = lambda v: "%.0f次循环" % v
+        future = [v for v in x80s if v > info["last_x"]]
+        if future:
+            eta = fmt(future[0]) if len(future) == 1 else "%s~%s" % (fmt(future[0]), fmt(future[-1]))
+    add("eta_80pct", eta)
+
+    drop = False
+    for a, b in zip(usable, usable[1:]):
+        ha = a["health_os"] if a["health_os"] is not None else a["health_raw"]
+        hb = b["health_os"] if b["health_os"] is not None else b["health_raw"]
+        if ha is not None and hb is not None and ha - hb > SNAPSHOT_DROP_PP:
+            drop = True
+    add("snapshot_drop_alert", "true" if drop else "false")
+
+    # ---- 异常信号 ----
+    signals = []
+    hard = []
+    pfs = (metrics.get("permanent_failure_status") or "").strip()
+    if pfs and pfs not in ("0", "false", "False"):
+        signals.append("permanent_failure_status=%s" % pfs)
+        hard.append("permanent_failure_status")
+    condition = (metrics.get("condition") or "").strip()
+    if condition and condition not in ("Normal", "Good", "OK"):
+        signals.append("condition=%s" % condition)
+        hard.append("condition")
+    cell = _num(metrics.get("cell_disconnect_count"))
+    if cell and cell > 0:
+        signals.append("cell_disconnect_count=%.0f" % cell)
+    max_t = _num(metrics.get("lifetime_max_temp_c"))
+    if max_t is not None and max_t >= 60:
+        signals.append("lifetime_max_temp_c>=60")
+    elif max_t is not None and max_t >= 50:
+        signals.append("lifetime_max_temp_c>=50")
+    cur_t = _num(metrics.get("temperature_c"))
+    if cur_t is not None and cur_t >= 45:
+        signals.append("temperature_c>=45")
+    fcc = _num(metrics.get("full_charge_capacity_mah"))
+    if not fcc:
+        signals.append("full_charge_capacity_missing")
+    if drop:
+        signals.append("snapshot_drop>5pp")
+    add("abnormal_signals", ",".join(signals))
+    add("hard_fault", "true" if hard else "false")
+
+    # ---- 综合结论四档，命中即停 ----
+    reasons = []
+    if hard:
+        tier = "需要送修检测"
+        reasons = hard
+    elif (judge is not None and judge < 80) or (ratio is not None and ratio >= 100):
+        tier = "建议更换电池"
+        if judge is not None and judge < 80:
+            reasons.append("health<80")
+        if ratio is not None and ratio >= 100:
+            reasons.append("cycle_ratio>=100")
+    elif (judge is not None and judge < 85) or (worst is not None and reliable and worst > 2) or (ratio is not None and ratio >= 80):
+        tier = "可以开始关注"
+        if judge is not None and judge < 85:
+            reasons.append("health<85")
+        if worst is not None and reliable and worst > 2:
+            reasons.append("decay_multiplier>2")
+        if ratio is not None and ratio >= 80:
+            reasons.append("cycle_ratio>=80")
+    else:
+        tier = "状态健康"
+    add("conclusion_tier", tier)
+    add("conclusion_reasons", ",".join(reasons))
+    triggered = tier in ("需要送修检测", "建议更换电池")
+    add("service_trigger_result", "true" if triggered else "false")
+    return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description="渲染电池容量衰减趋势 SVG")
+    ap = argparse.ArgumentParser(description="渲染电池容量衰减趋势 SVG，并输出判读字段")
     ap.add_argument("--metrics", required=True, help="collect_*.sh/ps1 产出的 metrics.env")
     ap.add_argument("--history", default=None, help="history.tsv；不传则用 metrics 里的 history_file")
     ap.add_argument("--out", required=True, help="输出 SVG 路径")
+    ap.add_argument("--assessment", default=None, help="判读字段输出路径；默认与 metrics.env 同目录的 assessment.env")
     args = ap.parse_args()
 
     if not os.path.exists(args.metrics):
         print("找不到 metrics 文件: %s" % args.metrics, file=sys.stderr)
         return 1
     m = read_metrics(args.metrics)
-    render(m, read_history(args.history or m.get("history_file")), args.out)
-    print(args.out)
+    out_path, info = render(m, read_history(args.history or m.get("history_file")), args.out)
+    fields = [("trend_svg", os.path.abspath(out_path))] + assess(m, info)
+    lines = ["%s=%s" % kv for kv in fields]
+    assessment_path = args.assessment or os.path.join(os.path.dirname(os.path.abspath(args.metrics)), "assessment.env")
+    try:
+        with open(assessment_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        lines.append("assessment_file=%s" % assessment_path)
+    except OSError:
+        pass
+    # 判读字段直接打到 stdout，模型不需要再读文件
+    print("\n".join(lines))
     return 0
 
 

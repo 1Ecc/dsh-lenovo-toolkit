@@ -47,6 +47,6 @@
   "license": "MIT",
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
-    "sync-skill": "bash scripts/sync-skill.sh"
+    "sync-skill": "node scripts/sync-skill.mjs"
   }
 }

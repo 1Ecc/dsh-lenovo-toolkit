@@ -4,7 +4,10 @@
 设计目标：零第三方依赖。只用系统自带的 powercfg + CIM/WMI，这样在客户机器上不需要装任何东西。
 
 用法：
-  powershell -NoProfile -ExecutionPolicy Bypass -File collect_windows.ps1 [-OutDir <目录>]
+  powershell -NoProfile -ExecutionPolicy Bypass -File collect_windows.ps1 [-OutDir <目录>] [-Render]
+
+  -Render  采集后自动探测 Python（py -3 / python / python3）并调用 render_trend.py，
+           把趋势图路径和判读字段接在指标后面一起打印；没有 Python 时打印 assessment_skipped=python_missing。
 
 产出：
   <OutDir>\metrics.env                  KEY=VALUE 指标（同时打印到 stdout）
@@ -21,7 +24,8 @@
 
 [CmdletBinding()]
 param(
-    [string]$OutDir = ""
+    [string]$OutDir = "",
+    [switch]$Render
 )
 
 $ErrorActionPreference = 'Continue'
@@ -154,7 +158,7 @@ function First-Value { foreach ($v in $args) { if ($v -ne $null -and "$v".Trim()
 把 4 位的机型代码当 MTM 报给客户，或拿去查备件/保修，都会对不上。
 
 完整 MTM 在本机任何 WMI 类里都取不到（Name/Model/SystemSKUNumber/BaseBoard 全试过），
-**只能靠主机编号去联想在线接口换**（battery_warranty_lookup 返回的 machine.mtm）。
+**只能靠主机编号去联想在线接口换**（本 Skill 服务入口 `warranty` 返回的 machine.mtm）。
 所以这里只输出能确定的东西：
   device_machine_type  4 位机型代码，一定有
   device_mtm           完整 MTM，本地取不到时留空——留空比填一个半截的值安全
@@ -193,7 +197,7 @@ $designCap = First-Value $xmlDesign $static.DesignedCapacity $batt.DesignVoltage
 if ($static -and $static.DesignedCapacity) { $designCap = First-Value $xmlDesign $static.DesignedCapacity }
 $fullCap   = First-Value $xmlFull $fullChg.FullChargedCapacity
 $cycleCnt  = First-Value $xmlCycles $cycle.CycleCount
-$battSerial = First-Value $xmlSerial $static.SerialNumber $batt.DeviceID
+$battSerial = "$(First-Value $xmlSerial $static.SerialNumber $batt.DeviceID)".Trim()
 $battMfr    = First-Value $xmlManufacturer $static.ManufactureName
 $battModel  = First-Value $static.DeviceName $batt.Name $xmlBattId
 $chemistry  = First-Value $xmlChemistry $static.Chemistry
@@ -249,6 +253,7 @@ $lines = @(
     "health_pct_raw=$healthPct"
     "cycle_count=$cycleCnt"
     "design_cycle_count="
+    "design_cycle_count_source=assumed"
     "condition=$($batt.Status)"
     "state_of_charge_pct=$($batt.EstimatedChargeRemaining)"
     "voltage_mv=$($batt.DesignVoltage)"
@@ -262,5 +267,32 @@ $lines = @(
 $metricsPath = Join-Path $OutDir 'metrics.env'
 $lines | Out-File $metricsPath -Encoding utf8
 $lines | ForEach-Object { Write-Output $_ }
+
+# ---------- 可选：趋势图 + 判读字段 ----------
+if ($Render) {
+    $renderScript = Join-Path $PSScriptRoot 'render_trend.py'
+    $svgPath = Join-Path $OutDir 'battery-trend.svg'
+    # Windows 的应用执行别名会让 python3 看似存在、执行即失败，所以先用 --version 验证再用
+    $interpreters = @(
+        @{ exe = 'py';      pre = @('-3') };
+        @{ exe = 'python';  pre = @() };
+        @{ exe = 'python3'; pre = @() }
+    )
+    $rendered = $false
+    foreach ($py in $interpreters) {
+        try {
+            & $py.exe @($py.pre + '--version') 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { continue }
+        } catch { continue }
+        $prev = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+            & $py.exe @($py.pre + @($renderScript, '--metrics', $metricsPath, '--out', $svgPath)) | ForEach-Object { Write-Output $_ }
+            if ($LASTEXITCODE -eq 0) { $rendered = $true }
+        } finally { [Console]::OutputEncoding = $prev }
+        break
+    }
+    if (-not $rendered) { Write-Output "assessment_skipped=python_missing" }
+}
 
 exit 0

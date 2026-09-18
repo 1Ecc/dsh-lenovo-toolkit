@@ -3,9 +3,9 @@
 跨平台（macOS / Windows）的笔记本电池体检。面向联想服务团队的一线咨询场景：
 输入是一句「帮我看看电池」，输出是一份服务顾问能照着讲、终端用户能看懂并且愿意相信的诊断报告。
 
-对应的 DSH 工具（10 个）：
+对应的 DSH 工具（9 个）：
 `battery_health_collect` · `battery_health_trend` · `battery_health_rules` ·
-`battery_warranty_lookup` · `battery_part_price_lookup` · `battery_service_stores` · `battery_service_handoff` ·
+`battery_warranty_lookup` · `battery_part_price_lookup` · `battery_service_stores` ·
 `battery_appointment_start` · `battery_appointment_options` · `battery_appointment_submit`
 对应的 skill：`.dsh/skills/battery-health-check/`
 
@@ -178,7 +178,7 @@ OR  B 意图触发（用户问换电池/续航/保修，可跨轮生效）      
 | ② 查备件价 | `battery_part_price_lookup` | `/api/SmartFault/getSmartFaultPrice?machineNo=<SN>` | 返回原厂标准备件价（不含工时）；「膨胀金」是维修定金，分开讲 |
 | ③ 找门店 | `battery_service_stores` | `/api/station/list`（按距离排序）+ IP 定位 | 定位到的城市要让用户确认；境外出口 IP 直接问用户 |
 | ④a 预约 | `battery_appointment_start` / `_options` / `_submit` | `csrecommend` + `servicesmall`（**需用户自己登录联想 ID**） | 服务类别=维修服务 · 故障类型=其他 · 故障描述=工具生成（≤100 字） · 时段列给用户选 · 联系人/手机号向用户要 · 复述后提交 · 反馈工单号 |
-| ④b 转人工 | `battery_service_handoff` | **mock** | 返回回执（工单号/排队/预计等待），对用户按已转接呈现；返回体 `mock: true` |
+| ④b 联系人工 | `400-990-8888` | 官方热线 | 当前没有坐席接口；只提供联系方式，不宣称已转接、不生成虚假工单号 |
 
 ①② 会把主机编号发到联想，工具要求 `confirmed=true`，模型必须先告知用户。
 

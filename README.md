@@ -3,7 +3,7 @@
 面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**联想专业工具集**。
 把联想服务体系里的专业判断能力——硬件诊断、备件、保修、服务网点——做成通用 agent 平台上可安装的插件。
 
-当前状态：**试点阶段**。共 **7 个能力域 / 24 个 DSH 工具 / 9 个 skill**——电池跨 macOS 与 Windows，其余六个能力域（设备、性能、存储、应用、Wi-Fi、受控操作）仅支持 Windows，**等待真实 DSH 运行时验证**。
+当前状态：**试点阶段**。共 **7 个能力域 / 23 个 DSH 工具 / 9 个 skill**——电池跨 macOS 与 Windows，其余六个能力域（设备、性能、存储、应用、Wi-Fi、受控操作）仅支持 Windows，**等待真实 DSH 运行时验证**。
 
 > **归属说明（待确认）**
 > 本仓库由联想服务团队成员维护，属于**试点性质的探索项目**，不代表联想官方发布，
@@ -60,7 +60,6 @@
 | `battery_part_price_lookup` | 查原厂电池备件价与维修抵扣券 |
 | `battery_service_stores` | 找最近的联想服务门店，并生成预约用的故障描述 |
 | `battery_appointment_start` / `_options` / `_submit` | 用用户自己登录后的 cookie 换凭据，选门店时段并提交预约单 |
-| `battery_service_handoff` | 转人工（当前为 mock） |
 
 `battery_health_rules` 的存在是为了让**只装了 Plugin 没装 Skill 的用户也能拿到判读标准**，
 否则模型会拿着一堆数字自由发挥，而判读规则正是这个项目最不该被绕过的部分。
@@ -123,7 +122,7 @@ ln -s "$(pwd)/.claude/skills/battery-health-check" ~/.claude/skills/battery-heal
 
 ```bash
 npm test              # 单元 + 真实采集的集成测试
-npm run sync-skill    # .dsh/skills → .claude/skills
+npm run sync-skill    # 电池 .codex → .dsh/.claude；其他 skill .dsh → .claude
 ```
 
 ---
@@ -151,7 +150,8 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 │   ├── helpers/                    跨组复用的断言
 │   └── tools/<能力域>.test.js       每个能力域一份，与 src/tools/ 一一对应
 │
-├── .dsh/skills/                    ← DSH skill 加载路径（唯一事实来源，共 9 个）
+├── .codex/skills/battery-health-check/ ← 电池 skill 唯一事实来源（可独立复制运行）
+├── .dsh/skills/                    ← DSH skill 加载路径（电池为派生副本，共 9 个）
 │   ├── xiangbangbang-device-assistant/  总路由：在其余 skill 之间选最少的那个
 │   ├── battery-health-check/       电池（唯一跨平台的一个）
 │   │   ├── SKILL.md                流程编排与报告模板
@@ -168,12 +168,12 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 ├── .claude/skills/                 ← Claude Code 加载路径（由 sync-skill.sh 生成）
 │
 ├── docs/                           见下
-└── scripts/sync-skill.sh           两份 skill 副本的同步，防漂移
+└── scripts/sync-skill.sh           各宿主 skill 副本的单向同步，防漂移
 ```
 
-两份 skill 副本是因为 DSH 扫 `.dsh/skills/`、Claude Code 扫 `.claude/skills/`，
-互不认对方的路径。软链在 Windows 上不可靠（本插件要跨平台），所以用真实副本 +
-`scripts/sync-skill.sh` 保持一致。**改动请改 `.dsh/` 那份再同步。**
+多份 skill 副本是因为各宿主扫描路径不同，互不认对方的路径。软链在 Windows 上不可靠
+（本插件要跨平台），所以用真实副本 +
+`scripts/sync-skill.sh` 保持一致。**电池只改 `.codex/skills/battery-health-check/`；其他 skill 改 `.dsh/`。**
 
 ### 加一个新能力域
 
@@ -182,7 +182,7 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 
 1. `src/tools/<能力域>/{collector.js,register.js}` —— 纯逻辑与 Cordis 壳分离；
    `register.js` 里 `export const group` 必须等于目录名
-2. `.dsh/skills/<skill 名>/` —— SKILL.md + scripts + references，然后 `npm run sync-skill`
+2. 新 skill 放 `.dsh/skills/<skill 名>/`；电池 skill 只改 `.codex/skills/battery-health-check/`，然后运行同步
 3. `src/index.js` 的 `GROUPS` 加一行
 4. `test/tools/<能力域>.test.js`
 5. `docs/tools/<能力域>.md`，并在 `docs/tools/README.md` 的表里加一行
@@ -195,7 +195,7 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 |---|---|
 | [docs/vision.md](docs/vision.md) | **为什么做**：判断、要验证的假设、指标、工具规划、设计原则、风险边界 |
 | [docs/progress.md](docs/progress.md) | **做到哪了**：当前状态、已完成、核心结论、踩过的坑、未来计划、未验证缺口 |
-| [docs/verification-checklist.md](docs/verification-checklist.md) | **发版前必须跑完**：装得上、24 个工具逐个冒烟、skill 路由 |
+| [docs/verification-checklist.md](docs/verification-checklist.md) | **发版前必须跑完**：装得上、23 个工具逐个冒烟、skill 路由 |
 | [docs/marketplace-listing.md](docs/marketplace-listing.md) | **怎么进生态**：收录机制、三个核心站点的逐项要求、已知坑、提交清单 |
 | [docs/tools/](docs/tools/README.md) | **每个能力域一份**：工具清单、数据口径、隐私边界、判读纪律；索引页含共同契约与迁移来源 |
 | [AGENTS.md](AGENTS.md) | **给 AI agent 的说明**：硬性约束、单一事实来源、代码约定、高频陷阱 |
@@ -214,16 +214,16 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 | 电池工具 · macOS | ✅ 实机验证 |
 | 电池工具 · Windows | ✅ 实机验证（2026-09-11，Windows 11 + PowerShell 5.1）。顺带修掉 `-InputFormat None` 采集超时与「机型代码被当成 MTM」两个真问题 |
 | 非电池工具（device / wifi / actions） | ⏳ 原 Device MCP 已在 Windows 11 验证过，**本仓库的 DSH Cordis 注册壳未验证** |
-| Cordis 工具注册 | ⏳ **部分**。电池版本在 DSH Desktop 上暴露过 schema 编译器问题并已修复（`87ee6c5`），24 工具版本未重新验证 |
-| `dsh plugin add` 安装 | ⏳ **部分**。只在电池版本上实测过；24 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
+| Cordis 工具注册 | ⏳ **部分**。电池版本在 DSH Desktop 上暴露过 schema 编译器问题并已修复（`87ee6c5`），23 工具版本未重新验证 |
+| `dsh plugin add` 安装 | ⏳ **部分**。只在电池版本上实测过；23 工具版本未重新验证。目录站 CI 只校验 manifest 形状，不安装不执行 |
 | 转化数据 | ❌ 无埋点 |
 | 品牌归属 | ❌ 未定论 |
 | 电池服务链路（保修 / 备件价 / 门店） | ✅ 真实 SN 打通（2026-09-11）；接口为联想站内接口，无稳定性承诺 |
 | 电池服务链路（预约提交） | ✅ 真实登录态下端到端实跑一单（2026-09-11，到店）；**上门分支未实跑**（测试机不支持上门） |
-| 电池服务链路（转人工） | ⚠ **mock**，未接坐席系统 |
+| 电池服务链路（联系人工） | ⚠ 未接坐席系统，仅提供官方热线 `400-990-8888`，不生成虚假回执 |
 
 ⚠️ **npm 上的包落后于本仓库**：`dsh-lenovo-toolkit@0.1.1`（2026-08-31 发布）只含电池工具组，
-而本仓库自 2026-09-03 起已有 17 个工具（2026-09-07 重构为 7 个能力域，2026-09-11 电池组加入服务与预约链路后为 24 个）。用 npm 包名安装拿到的是旧版，
+而本仓库自 2026-09-03 起已有 17 个工具（2026-09-07 重构为 7 个能力域，2026-09-11 电池组加入服务与预约链路后曾为 24 个；2026-09-18 删除虚假转人工工具后为 23 个）。用 npm 包名安装拿到的是旧版，
 用 `github:` 源码规格安装拿到的才是当前代码。
 
 完整清单与优先级见 [docs/progress.md](docs/progress.md)。

@@ -25,7 +25,6 @@ import {
   locateByIp,
   lookupBatteryPrice,
   lookupWarranty,
-  mockHumanHandoff,
   putSession,
   submitAppointment,
 } from './lenovo-service.js'
@@ -216,11 +215,15 @@ export function register(ctx) {
     defineTool({
       name: 'battery_service_stores',
       description:
-        '查离用户最近的联想服务门店（免登录）。不传 city 时先按出口 IP 定位城市；定位失败会返回 city_required，' +
+        '查联想服务门店（免登录）。优先复用官网定位或用户选择的地图位置；仅 useIp=true 时用 IP 猜城市。缺少位置返回 city_required，' +
         '此时问用户所在城市再调一次。返回门店编码、地址、电话、营业时间、距离；distance_is_estimate=true 时距离只是城市中心估算。' +
         '同时按传入的检测数字生成预约工单用的故障描述 fault_description。',
       parameters: {
-        city: { type: 'string', description: '城市名，如「北京」「杭州」。不传则按 IP 定位' },
+        city: { type: 'string', description: '城市名，如「北京」「杭州」' },
+        lat: { type: 'number', description: '官网地图选择位置的纬度，需与腾讯地图坐标系一致' },
+        lng: { type: 'number', description: '官网地图选择位置的经度，需与腾讯地图坐标系一致' },
+        locationSource: { type: 'string', description: 'browser / user_map / ip / unknown；IP 和未知来源均标为估算' },
+        useIp: { type: 'boolean', description: '显式启用 IP 城市兜底；默认不调用' },
         limit: { type: 'number', description: '返回门店数，默认 3' },
         conclusion: { type: 'string', description: '诊断结论档位，如「建议更换电池」' },
         deviceModel: { type: 'string', description: 'metrics.device_model' },
@@ -236,16 +239,18 @@ export function register(ctx) {
       async execute(args) {
         try {
           let loc = null
-          if (!args.city) {
+          if (!args.city && args.useIp === true) {
             loc = await locateByIp()
             if (!loc) {
               return failure('error', 'city_required', '无法按 IP 定位城市，请询问用户所在城市后重试')
             }
           }
+          if (!args.city && !loc) return failure('error', 'city_required', '优先复用官网位置或请用户提供城市、区县和地标')
           const r = await findNearestStores({
             city: args.city || loc.city,
-            lat: loc?.lat,
-            lng: loc?.lng,
+            lat: args.lat ?? loc?.lat,
+            lng: args.lng ?? loc?.lng,
+            locationSource: loc ? 'ip' : args.locationSource || 'unknown',
             limit: args.limit || 3,
           })
           const data = {
@@ -267,24 +272,6 @@ export function register(ctx) {
         } catch (err) {
           return toEnvelopeFailure(err)
         }
-      },
-    }),
-  )
-
-  ctx.tools.register(
-    defineTool({
-      name: 'battery_service_handoff',
-      description:
-        '把电池检测结论转交联想人工服务，返回转接回执（工单号、排队位置、预计等待）。' +
-        '仅在用户明确要求转人工时调用；调用前要征得同意并说明会转交的摘要内容。',
-      parameters: {
-        sn: { type: 'string', description: '主机编号（可选）' },
-        summary: { type: 'string', required: true, description: '转交给人工的检测摘要，不含手机号等个人信息' },
-        reason: { type: 'string', description: '转人工原因' },
-      },
-      output: envelopeOutput,
-      async execute(args) {
-        return success(mockHumanHandoff({ sn: args.sn, summary: args.summary, reason: args.reason }))
       },
     }),
   )

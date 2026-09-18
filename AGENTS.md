@@ -34,19 +34,20 @@
 
 | 内容 | 源 | 派生／指针 |
 |---|---|---|
-| skill 文件 | `.dsh/skills/` | `.claude/skills/`（跑 `npm run sync-skill` 生成） |
+| 电池 skill | `.codex/skills/battery-health-check/` | `.dsh/skills/battery-health-check/`、`.claude/skills/battery-health-check/` |
+| 其他 skill | `.dsh/skills/` | `.claude/skills/`（跑 `npm run sync-skill` 生成） |
 | agent 说明 | `AGENTS.md` | `CLAUDE.md`（指针，不要往里写内容） |
 | 验证状态 | `docs/progress.md` 第六章 | `README.md`、`handoff.md`、`docs/tools/*.md` 一律指过去 |
 | 能力域清单 | `src/tools/` 的目录结构 | `docs/tools/README.md` 的表、`src/index.js` 的 `GROUPS`（有守卫） |
 
-**改 skill 请改 `.dsh/` 那份再同步。** 直接改 `.claude/` 那份会在下次同步时被覆盖。
-`npm test` 里有守卫会检查这两处一致。
+**改电池 skill 请改 `.codex/` 那份；其他 skill 改 `.dsh/`，再运行同步。** `.dsh` 和 `.claude`
+里的电池目录都是派生副本，不得反向覆盖 `.codex`。`npm test` 有守卫检查同步方向和副本一致性。
 
 ## 命令
 
 ```bash
 npm test              # 单元 + 真实采集的集成测试 + 仓库一致性守卫
-npm run sync-skill    # .dsh/skills → .claude/skills
+npm run sync-skill    # 电池 .codex → .dsh/.claude；其他 skill .dsh → .claude
 ```
 
 没有构建步骤。插件是 ESM JavaScript，改完直接生效。
@@ -84,7 +85,7 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 1. `src/tools/<能力域>/{collector.js,register.js}`——这两个文件名是硬性的；
    额外的纯逻辑模块可以有（`wifi/` 就另有三个渲染模块）。
    `register.js` 里 `export const group` 必须等于目录名。
-2. `.dsh/skills/<skill 名>/`（SKILL.md + scripts + references），然后 `npm run sync-skill`
+2. 新 skill 放 `.dsh/skills/<skill 名>/`；电池 skill 只改 `.codex/skills/battery-health-check/`，然后运行同步
 3. `src/index.js` 的 `GROUPS` 加一行
 4. `test/tools/<能力域>.test.js`
 5. `docs/tools/<能力域>.md`，并在 `docs/tools/README.md` 的表里加一行
@@ -103,9 +104,8 @@ npm run sync-skill    # .dsh/skills → .claude/skills
 
 - 提交信息用中文，正文说清**为什么这么改**，尤其是反直觉的取舍。
 - 结尾加 `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`。
-- **不要制造空提交或无意义提交去凑数。** `awesome-dsh-plugin` 有 ≥10 提交的门槛，
-  但那个门槛正是用来拦「临时攒出来的仓库」的，凑数会适得其反，
-  而且维护者合并前会实际读仓库。
+- **不要制造空提交或无意义提交去凑数。** `awesome-dsh-plugin` 已取消提交数门槛，
+  而且维护者合并前会实际读仓库；只提交有真实价值的改动。
 
 ## 对外操作要先确认
 
